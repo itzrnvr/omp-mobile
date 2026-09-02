@@ -2,14 +2,12 @@
  * PURPOSE: Chat message component following AI Elements + ChatGPT gray design.
  * - User messages: contained bubble with asymmetric corners, warm gray bg
  * - Assistant messages: BUBBLELESS — transparent, open text
- * - Reasoning: collapsible with streaming indicator (uses Reasoning component)
- * - Tool calls: bordered cards with status (uses Tool component)
- * - Code blocks: dark surface with copy button (uses CodeBlock component)
- * - Message actions: copy, retry buttons on assistant messages
+ * - Reasoning: collapsible with streaming indicator
+ * - Tool calls: bordered cards with status
  * - Metadata: compact, muted, horizontal bar
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, lineHeights, radii } from "../../theme";
 import { Text } from "../ui/Text";
@@ -47,14 +45,7 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
       <View style={styles.assistantContent}>
         {/* Reasoning blocks — collapsible with streaming indicator */}
         {thinkingBlocks.map((block, i) => (
-          <View key={"r" + i} style={styles.reasoningBlock}>
-            <Text size="xs" weight="medium" color="textMuted">
-              {"\u2756 Thinking " + (isStreaming ? "..." : "\u25B8")}
-            </Text>
-            <Text size="sm" color="textMuted" style={styles.reasoningText} numberOfLines={isStreaming ? undefined : 3}>
-              {block.thinking || ""}
-            </Text>
-          </View>
+          <ReasoningBlock key={"r" + i} text={block.thinking || ""} isStreaming={isStreaming} />
         ))}
 
         {/* Text content — bubbleless, just text */}
@@ -93,6 +84,30 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
         )}
       </View>
     </View>
+  );
+}
+
+function ReasoningBlock({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
+  // Auto-expand while streaming, collapse when done
+  const [expanded, setExpanded] = useState(isStreaming ?? false);
+
+  React.useEffect(() => {
+    if (isStreaming) setExpanded(true);
+  }, [isStreaming]);
+
+  return (
+    <Pressable style={styles.reasoningBlock} onPress={() => setExpanded(!expanded)}>
+      <Text size="xs" weight="medium" color="textMuted">
+        {isStreaming
+          ? "\u2756 Thinking..."
+          : "\u2756 Thought " + (expanded ? "\u25BE" : "\u25B8")}
+      </Text>
+      {expanded && (
+        <Text size="sm" color="textMuted" style={styles.reasoningText}>
+          {text}
+        </Text>
+      )}
+    </Pressable>
   );
 }
 

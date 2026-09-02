@@ -195,6 +195,7 @@ const styles = StyleSheet.create({
   pickerOverlay: {
     position: "absolute",
     top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     zIndex: 100,
   },
   // ChatKit: compact popover — surface-2 bg, 12px radius, shadow
@@ -209,6 +210,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+    overflow: "hidden",
   },
   pickerSection: {
     marginTop: spacing.sm,
@@ -248,9 +250,11 @@ const styles = StyleSheet.create({
   cwdRow: {
     flexDirection: "row",
     alignItems: "center",
+    overflow: "hidden",
   },
   cwdInput: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: colors.inputBg,
     borderRadius: radii.sm,
     paddingHorizontal: spacing.md,
