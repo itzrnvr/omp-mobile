@@ -12,10 +12,12 @@ import { Badge } from "../components/ui/Badge";
 import { Stack } from "../components/ui/Stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "../store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SessionSummary } from "../types";
 import type { NavigationProp } from "../navigation";
 
 export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
+  const insets = useSafeAreaInsets();
   const { sessions, refreshSessions, wsStatus, loadingSessions } = useStore();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -83,7 +85,7 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
       data={sessions}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
       }

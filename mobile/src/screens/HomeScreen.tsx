@@ -13,16 +13,18 @@ import { Button } from "../components/ui/Button";
 import { Stack } from "../components/ui/Stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "../store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NavigationProp } from "../navigation";
 
 export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
+  const insets = useSafeAreaInsets();
   const { serverStatus, wsStatus, tunnelUrl, tunnelStatus, startTunnel, stopTunnel } = useStore();
 
   const statusColor = wsStatus === "connected" ? "success" : wsStatus === "connecting" ? "warning" : "error";
   const statusLabel = wsStatus === "connected" ? "Connected" : wsStatus === "connecting" ? "Connecting..." : "Disconnected";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}>
       <Card padding="lg">
         <Stack gap="md">
           <View style={styles.rowBetween}>

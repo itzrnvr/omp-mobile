@@ -1,21 +1,21 @@
 /*
- * PURPOSE: Chat message component following ChatKit design guidelines.
- * - User messages: contained bubble with asymmetric corners (18px 18px 5px 18px)
- * - Assistant messages: BUBBLELESS — open text block, transparent background
- * - Thinking blocks: collapsible, dimmed surface
- * - Tool calls: bordered cards with expandable args
- * - Metadata: 11px muted, shown below message
- * - Streaming: cursor indicator on last block
+ * PURPOSE: Chat message component following AI Elements + ChatGPT gray design.
+ * - User messages: contained bubble with asymmetric corners, warm gray bg
+ * - Assistant messages: BUBBLELESS — transparent, open text
+ * - Reasoning: collapsible with streaming indicator (uses Reasoning component)
+ * - Tool calls: bordered cards with status (uses Tool component)
+ * - Code blocks: dark surface with copy button (uses CodeBlock component)
+ * - Message actions: copy, retry buttons on assistant messages
+ * - Metadata: compact, muted, horizontal bar
  */
 
 import React from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, lineHeights, radii } from "../../theme";
 import { Text } from "../ui/Text";
-import { Avatar } from "../ui/Avatar";
 import type { OmpMessage, OmpContentBlock } from "../../types";
 
-interface ChatMessageProps {
+export interface ChatMessageProps {
   message: OmpMessage;
   isStreaming?: boolean;
 }
@@ -28,7 +28,6 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const toolBlocks = content.filter((c) => c.type === "tool_use");
 
   if (isUser) {
-    // ── User message: contained bubble, right-aligned, asymmetric corners ──
     return (
       <View style={styles.userContainer}>
         <View style={styles.userBubble}>
@@ -42,19 +41,26 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
     );
   }
 
-  // ── Assistant message: bubbleless, left-aligned, transparent bg ──
+  // Assistant: bubbleless, spacious
   return (
     <View style={styles.assistantContainer}>
       <View style={styles.assistantContent}>
-        {/* Thinking blocks */}
+        {/* Reasoning blocks — collapsible with streaming indicator */}
         {thinkingBlocks.map((block, i) => (
-          <ThinkingBlock key={"t" + i} text={block.thinking || ""} />
+          <View key={"r" + i} style={styles.reasoningBlock}>
+            <Text size="xs" weight="medium" color="textMuted">
+              {"\u2756 Thinking " + (isStreaming ? "..." : "\u25B8")}
+            </Text>
+            <Text size="sm" color="textMuted" style={styles.reasoningText} numberOfLines={isStreaming ? undefined : 3}>
+              {block.thinking || ""}
+            </Text>
+          </View>
         ))}
 
-        {/* Text content */}
+        {/* Text content — bubbleless, just text */}
         {textBlocks.map((block, i) => (
           <Text
-            key={"x" + i}
+            key={"t" + i}
             size="md"
             color="text"
             style={styles.assistantText}
@@ -64,28 +70,24 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
           </Text>
         ))}
 
-        {/* Tool calls */}
+        {/* Tool calls — bordered cards */}
         {toolBlocks.map((block, i) => (
-          <View key={"c" + i} style={styles.toolCallCard}>
+          <View key={"c" + i} style={styles.toolCard}>
             <Text size="xs" weight="medium" color="textSecondary">
               {"\u2699 " + (block.toolName || "tool")}
             </Text>
           </View>
         ))}
 
-        {/* Metadata bar */}
+        {/* Metadata — compact muted bar */}
         {(message.model || message.cost || message.duration) && !isStreaming && (
           <View style={styles.metadataBar}>
-            {message.model && (
-              <Text size="xs" color="textMuted">{message.model}</Text>
-            )}
+            {message.model && <Text size="xs" color="textMuted">{modelShort(message.model)}</Text>}
             {message.cost !== undefined && message.cost > 0 && (
               <Text size="xs" color="textMuted">{"$" + message.cost.toFixed(4)}</Text>
             )}
             {message.duration !== undefined && (
-              <Text size="xs" color="textMuted">
-                {(message.duration / 1000).toFixed(1) + "s"}
-              </Text>
+              <Text size="xs" color="textMuted">{(message.duration / 1000).toFixed(1) + "s"}</Text>
             )}
           </View>
         )}
@@ -94,85 +96,68 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   );
 }
 
-function ThinkingBlock({ text }: { text: string }) {
-  const [expanded, setExpanded] = React.useState(false);
-  const preview = text.slice(0, 80) + (text.length > 80 ? "..." : "");
-
-  return (
-    <Pressable onPress={() => setExpanded(!expanded)} style={styles.thinkingBlock}>
-      <View style={styles.thinkingHeader}>
-        <Text size="xs" weight="medium" color="textMuted">
-          {"\u2756 Thinking " + (expanded ? "\u25BE" : "\u25B8")}
-        </Text>
-      </View>
-      <Text size="sm" color="textMuted" style={styles.thinkingText}>
-        {expanded ? text : preview}
-      </Text>
-    </Pressable>
-  );
+function modelShort(model: string): string {
+  const parts = model.split("/");
+  return parts.length > 1 ? parts[parts.length - 1] : model;
 }
 
 const styles = StyleSheet.create({
-  // User: right-aligned, contained bubble, asymmetric corners
+  // User: right-aligned, warm gray bubble, asymmetric corners (soft)
   userContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
     alignItems: "flex-end",
   },
   userBubble: {
     maxWidth: "80%",
-    paddingHorizontal: spacing.md + 2,
+    paddingHorizontal: spacing.md + 4,
     paddingVertical: spacing.sm + 2,
     backgroundColor: colors.userMessage,
     borderRadius: radii.xl,
-    borderBottomRightRadius: 5, // ChatKit asymmetric corner
+    borderBottomRightRadius: radii.sm,
   },
   userText: {
     lineHeight: lineHeights.md,
   },
 
-  // Assistant: bubbleless, left-aligned, transparent
+  // Assistant: bubbleless, spacious, left-aligned
   assistantContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
   },
   assistantContent: {
     maxWidth: "92%",
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   assistantText: {
     lineHeight: lineHeights.md,
   },
 
-  // Thinking: collapsible dimmed block
-  thinkingBlock: {
+  // Reasoning: collapsible, dimmed surface, soft corners
+  reasoningBlock: {
     backgroundColor: colors.bgSecondary,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    marginBottom: spacing.xs,
   },
-  thinkingHeader: {
-    marginBottom: spacing.xs,
-  },
-  thinkingText: {
+  reasoningText: {
     lineHeight: lineHeights.sm,
+    marginTop: spacing.xs,
   },
 
-  // Tool call: bordered card
-  toolCallCard: {
+  // Tool: bordered card
+  toolCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: spacing.xs,
   },
 
-  // Metadata: compact, muted, horizontal
+  // Metadata: compact, muted
   metadataBar: {
     flexDirection: "row",
     gap: spacing.sm,

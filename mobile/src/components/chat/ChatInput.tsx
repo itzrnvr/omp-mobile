@@ -1,7 +1,8 @@
 /*
- * PURPOSE: Chat composer following ChatKit design guidelines.
- * Elevated pill-shaped composer with focus glow, states for
- * empty/typing/streaming. Attachment and tool area at bottom.
+ * PURPOSE: Chat composer following AI Elements PromptInput + ChatGPT gray design.
+ * Elevated pill shape with spacious padding, soft corners, focus state.
+ * States: empty → typing → streaming (stop button).
+ * Toolbar area for attachments and tools.
  */
 
 import React from "react";
@@ -9,13 +10,14 @@ import { View, TextInput, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, fontSizes, radii } from "../../theme";
 import { Ionicons } from "@expo/vector-icons";
 
-interface ChatInputProps {
+export interface ChatInputProps {
   value: string;
   onChangeText: (text: string) => void;
   onSend: () => void;
   onCancel?: () => void;
   isGenerating?: boolean;
   placeholder?: string;
+  bottomInset?: number;
 }
 
 export function ChatInput({
@@ -25,12 +27,13 @@ export function ChatInput({
   onCancel,
   isGenerating,
   placeholder = "Ask anything...",
+  bottomInset = 0,
 }: ChatInputProps) {
   const canSend = value.trim().length > 0 && !isGenerating;
   const [focused, setFocused] = React.useState(false);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
       <View style={[styles.composer, focused && styles.composerFocused]}>
         <TextInput
           style={styles.input}
@@ -57,7 +60,7 @@ export function ChatInput({
           >
             <Ionicons
               name="arrow-up"
-              size={18}
+              size={20}
               color={canSend ? colors.bg : colors.textMuted}
             />
           </Pressable>
@@ -69,11 +72,11 @@ export function ChatInput({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
     backgroundColor: colors.bg,
   },
-  // ChatKit: elevated pill composer, 20px radius, subtle border
+  // ChatGPT-style: warm gray pill, spacious, soft corners
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -82,13 +85,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.composer,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    minHeight: 48,
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 52,
   },
-  // ChatKit: focus state — accent border + glow
   composerFocused: {
-    borderColor: colors.accentStrong,
+    borderColor: colors.textMuted,
   },
   input: {
     flex: 1,
@@ -100,11 +102,10 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     lineHeight: 22,
   },
-  // Send button: circular, accent when active
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.surfaceHover,
     alignItems: "center",
     justifyContent: "center",
@@ -112,11 +113,10 @@ const styles = StyleSheet.create({
   sendButtonActive: {
     backgroundColor: colors.accent,
   },
-  // Stop button: circular with error border
   stopButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",

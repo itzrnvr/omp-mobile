@@ -13,8 +13,10 @@ import { Input } from "../components/ui/Input";
 import { Stack } from "../components/ui/Stack";
 import { Badge } from "../components/ui/Badge";
 import { useStore } from "../store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const {
     serverUrl,
     token,
@@ -45,7 +47,7 @@ export function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}>
       <Card padding="lg">
         <Stack gap="md">
           <View style={styles.rowBetween}>

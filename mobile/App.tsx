@@ -5,6 +5,7 @@
 
 import React, { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -22,6 +23,8 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function TabNavigator() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -30,8 +33,8 @@ function TabNavigator() {
           backgroundColor: colors.bgSecondary,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 56,
-          paddingBottom: 4,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom,
         },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,

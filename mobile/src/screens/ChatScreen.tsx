@@ -11,10 +11,12 @@ import { MessageList } from "../components/chat/MessageList";
 import { ChatInput } from "../components/chat/ChatInput";
 import { Text } from "../components/ui/Text";
 import { useStore } from "../store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MODEL_PRESETS, THINKING_LEVELS } from "../types";
 import type { ThinkingLevel } from "../types";
 
 export function ChatScreen({ route }: { route: { params?: { sessionId?: string } } }) {
+  const insets = useSafeAreaInsets();
   const [input, setInput] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const [cwdInput, setCwdInput] = useState("");
@@ -158,6 +160,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
         placeholder={isGenerating ? "Generating..." : "Ask anything..."}
+        bottomInset={insets.bottom}
       />
     </KeyboardAvoidingView>
   );
