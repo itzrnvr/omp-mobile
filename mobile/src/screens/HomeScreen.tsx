@@ -126,7 +126,7 @@ function formatUptime(seconds: number): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.md },
+  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   tunnelUrlBox: {

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable } from "react-native";
 import { colors, spacing, radii } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
@@ -31,6 +31,7 @@ export function SettingsScreen() {
   const [urlInput, setUrlInput] = useState(serverUrl || "ws://localhost:9090");
   const [tokenInput, setTokenInput] = useState(token || "omp-mobile-personal-2026");
   const [tunnelUrlInput, setTunnelUrlInput] = useState("");
+  const [showToken, setShowToken] = useState(false);
 
   const handleConnect = () => {
     setServerUrl(urlInput);
@@ -74,8 +75,12 @@ export function SettingsScreen() {
           <Text size="md" weight="semibold" color="text">Local Network</Text>
           <Text size="xs" color="textMuted">Connect to the bridge server on your local network</Text>
           <Input label="Server URL" value={urlInput} onChangeText={setUrlInput} placeholder="ws://192.168.1.100:9090" />
-          <Input label="Auth Token" value={tokenInput} onChangeText={setTokenInput} placeholder="Paste the token from the bridge server" />
-          <Button variant="filled" size="md" fullWidth onPress={handleConnect}>Connect</Button>
+          <Input label="Auth Token" value={tokenInput} onChangeText={setTokenInput} placeholder="Paste the token from the bridge server" secureTextEntry={!showToken} />
+          {showToken && <Text size="xs" color="textMuted">{tokenInput}</Text>}
+          <Pressable onPress={() => setShowToken(!showToken)} style={{ alignSelf: "flex-end" }}>
+            <Text size="xs" color="textSecondary">{showToken ? "Hide" : "Show"} token</Text>
+          </Pressable>
+          <Button variant="filled" size="md" fullWidth onPress={handleConnect} disabled={wsStatus === "connected"}>{wsStatus === "connected" ? "Connected" : "Connect"}</Button>
           {wsStatus === "connected" && (
             <Button variant="outline" size="md" fullWidth onPress={disconnect}>Disconnect</Button>
           )}
@@ -103,6 +108,6 @@ export function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.md },
+  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });

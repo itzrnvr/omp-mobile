@@ -106,6 +106,7 @@ const styles = StyleSheet.create({
   list: {
     padding: spacing.lg,
     gap: spacing.sm,
+    paddingBottom: 100,
   },
   sessionItem: {
     marginBottom: 0,
