@@ -42,6 +42,7 @@ export function SettingsScreen() {
     if (tunnelUrlInput.trim()) {
       const wsUrl = tunnelUrlInput.trim().replace(/^http/, "ws");
       setServerUrl(wsUrl);
+      setToken(tokenInput);
       connect();
     }
   };
