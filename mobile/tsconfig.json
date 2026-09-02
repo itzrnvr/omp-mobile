@@ -1,0 +1,1 @@
+{"compilerOptions":{"strict":true,"jsx":"react-jsx","esModuleInterop":true,"skipLibCheck":true,"moduleResolution":"bundler","resolveJsonModule":true,"paths":{"@/*":["./src/*"]}},"extends":"expo/tsconfig.base","include":["**/*.ts","**/*.tsx"]}

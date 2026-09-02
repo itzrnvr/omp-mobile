@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "OMP Controller",
+    "slug": "omp-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "ompmobile",
+    "android": {
+      "package": "com.omp.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0C0E"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "jsEngine": "hermes",
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}

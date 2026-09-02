@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build
+*.jks
+*.p8
+*.keystore
+*.mobileprovision
+*.orig.*
+ios/
+android/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Server
+server/test-ws*.ts
+server/bun.lock
