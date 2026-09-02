@@ -77,7 +77,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
       <Stack gap="sm">
         <Pressable style={styles.quickAction} onPress={() => navigation.getParent()?.navigate("Chat", {})}>
           <View style={styles.quickActionIcon}>
-            <Text size="lg" weight="semibold" color="textSecondary">+</Text>
+            <Ionicons name="add" size={22} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">New Conversation</Text>
@@ -87,7 +87,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
 
         <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SessionsTab")}>
           <View style={styles.quickActionIcon}>
-            <Text size="lg" color="textSecondary">{"\u25C9"}</Text>
+            <Ionicons name="chatbubbles" size={22} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">Sessions</Text>
@@ -97,7 +97,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
 
         <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SettingsTab")}>
           <View style={styles.quickActionIcon}>
-            <Text size="lg" color="textSecondary">{"\u2699"}</Text>
+            <Ionicons name="settings" size={22} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">Settings</Text>
