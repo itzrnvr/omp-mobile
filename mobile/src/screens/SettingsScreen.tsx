@@ -29,7 +29,7 @@ export function SettingsScreen() {
   } = useStore();
 
   const [urlInput, setUrlInput] = useState(serverUrl || "ws://localhost:9090");
-  const [tokenInput, setTokenInput] = useState(token || "4fb2d675-e5d5-455f-8146-7402a464006c");
+  const [tokenInput, setTokenInput] = useState(token || "omp-mobile-personal-2026");
   const [tunnelUrlInput, setTunnelUrlInput] = useState("");
 
   const handleConnect = () => {

@@ -27,7 +27,7 @@ import type {
 } from "./types.ts";
 
 const PORT = parseInt(process.env.OMP_BRIDGE_PORT || "9090", 10);
-const AUTH_TOKEN = process.env.OMP_BRIDGE_TOKEN || crypto.randomUUID();
+const AUTH_TOKEN = process.env.OMP_BRIDGE_TOKEN || "omp-mobile-personal-2026";
 
 interface ConnectionState {
   ompKill: (() => void) | null;

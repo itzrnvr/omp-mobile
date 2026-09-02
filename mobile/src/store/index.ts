@@ -477,14 +477,20 @@ export const useStore = create<StoreState>((set, get) => {
           AsyncStorage.getItem(KEY_CWD),
         ]);
         set({
-          serverUrl: url ?? '',
-          token: token ?? '',
+          serverUrl: url ?? 'ws://localhost:9090',
+          token: token ?? 'omp-mobile-personal-2026',
           selectedModel: model ?? null,
           thinkingLevel: (thinking as ThinkingLevel) ?? 'high',
           selectedCwd: cwd ?? null,
         });
+        // Auto-connect with loaded/defaults
+        get().connect();
       } catch {
-        // Leave defaults on read failure.
+        set({
+          serverUrl: 'ws://localhost:9090',
+          token: 'omp-mobile-personal-2026',
+        });
+        get().connect();
       }
     },
   };
