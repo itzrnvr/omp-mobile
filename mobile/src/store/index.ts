@@ -1,13 +1,7 @@
 /*
  * PURPOSE: Zustand store for OMP Mobile — the single source of app state.
- * Three logical slices live in one create() call:
- *   - connection: server URL, token, WS + server status, tunnel
- *   - chat: current session, messages, streaming text, send/cancel/load
- *   - sessions: session list + refresh
- *
- * serverUrl and token are persisted to AsyncStorage and restored via hydrate().
- * The WebSocket service instance is kept in a module-level variable (not in
- * reactive state) so it never triggers re-renders.
+ * Handles all OMP event types: text, thinking, tool calls, notices, titles.
+ * Includes model selector and thinking level state.
  */
 
 import { create } from 'zustand';
@@ -16,15 +10,21 @@ import { WebSocketService, type WsStatus } from '../services/ws';
 import type {
   OmpEvent,
   OmpMessage,
+  OmpContentBlock,
   ServerStatus,
   SessionSummary,
   WsServerMessage,
+  ToolCallInfo,
+  ThinkingLevel,
 } from '../types';
 
 const KEY_URL = 'omp.serverUrl';
 const KEY_TOKEN = 'omp.token';
+const KEY_MODEL = 'omp.model';
+const KEY_THINKING = 'omp.thinking';
 
-// Module-level holder for the live WebSocket service (kept out of state).
+const KEY_CWD = 'omp.cwd';
+
 let wsService: WebSocketService | null = null;
 
 interface SendMessageOpts {
@@ -35,7 +35,7 @@ interface SendMessageOpts {
 }
 
 interface StoreState {
-  // ── connection slice ────────────────────────────────────────────────────────
+  // connection
   serverUrl: string;
   token: string;
   wsStatus: WsStatus;
@@ -49,65 +49,75 @@ interface StoreState {
   startTunnel: () => void;
   stopTunnel: () => void;
 
-  // ── chat slice ──────────────────────────────────────────────────────────────
+  // chat
   currentSessionId: string | null;
   messages: OmpMessage[];
   streamingText: string;
+  streamingThinking: string;
   isGenerating: boolean;
   currentModel: string | null;
+  selectedModel: string | null;
+  thinkingLevel: ThinkingLevel;
+  selectedCwd: string | null;
+  toolCalls: ToolCallInfo[];
+  notices: { level: string; message: string }[];
+  sessionTitle: string | null;
+  setSelectedModel: (model: string) => void;
+  setThinkingLevel: (level: ThinkingLevel) => void;
+  setSelectedCwd: (cwd: string) => void;
   sendMessage: (content: string, opts?: SendMessageOpts) => void;
   cancelGeneration: () => void;
   loadSession: (sessionId: string) => void;
   startNewSession: () => void;
-  /** Single entry point for every WsServerMessage; updates all slices. */
   processWsEvent: (msg: WsServerMessage) => void;
 
-  // ── sessions slice ──────────────────────────────────────────────────────────
+  // sessions
   sessions: SessionSummary[];
   loadingSessions: boolean;
   refreshSessions: () => void;
 
-  // ── hydration ───────────────────────────────────────────────────────────────
+  // hydration
   hydrate: () => Promise<void>;
 }
 
 export const useStore = create<StoreState>((set, get) => {
-  // ─── streaming helpers (close over set/get) ───────────────────────────────
-
-  /** Flush any accumulated streaming text into a finalized assistant message. */
   const flushStream = (): void => {
-    const { streamingText, messages } = get();
-    if (streamingText) {
+    const { streamingText, streamingThinking, messages, currentModel } = get();
+    if (streamingText || streamingThinking) {
+      const content: OmpContentBlock[] = [];
+      if (streamingThinking) {
+        content.push({ type: 'thinking', thinking: streamingThinking });
+      }
+      if (streamingText) {
+        content.push({ type: 'text', text: streamingText });
+      }
       set({
-        messages: [
-          ...messages,
-          { role: 'assistant', content: [{ type: 'text', text: streamingText }] },
-        ],
+        messages: [...messages, { role: 'assistant', content, model: currentModel ?? undefined }],
         streamingText: '',
+        streamingThinking: '',
       });
     }
   };
 
-  /** Apply an OMP streaming event to chat state. */
   const processEvent = (event: OmpEvent, sessionId: string): void => {
     switch (event.type) {
       case 'session': {
-        // Adopt the server-assigned session id (new or resumed).
         if (sessionId) set({ currentSessionId: sessionId });
         break;
       }
       case 'agent_start': {
-        set({ isGenerating: true, streamingText: '' });
-        if (event.model) set({ currentModel: event.model });
+        set({ isGenerating: true, streamingText: '', streamingThinking: '', toolCalls: [], notices: [] });
         break;
       }
       case 'turn_start': {
-        // Nothing to surface yet.
         break;
       }
       case 'message_start': {
-        if (event.message?.model) set({ currentModel: event.message.model });
-        if (event.message?.role === 'assistant') set({ streamingText: '' });
+        const startMsg = typeof event.message === 'string' ? undefined : event.message;
+        if (startMsg?.model) set({ currentModel: startMsg.model });
+        if (startMsg?.role === 'assistant') {
+          set({ streamingText: '', streamingThinking: '' });
+        }
         break;
       }
       case 'message_update': {
@@ -120,38 +130,93 @@ export const useStore = create<StoreState>((set, get) => {
           if (typeof delta === 'string') {
             set((s) => ({ streamingText: s.streamingText + delta }));
           }
+        } else if (sub.type === 'thinking_start') {
+          set({ streamingThinking: '' });
+        } else if (sub.type === 'thinking_delta') {
+          const delta = sub.delta || sub.text;
+          if (typeof delta === 'string') {
+            set((s) => ({ streamingThinking: s.streamingThinking + delta }));
+          }
+        } else if (sub.type === 'tool_call_start') {
+          if (sub.toolCallId && sub.toolName) {
+            set((s) => ({
+              toolCalls: [...s.toolCalls, {
+                id: sub.toolCallId!,
+                name: sub.toolName!,
+                args: '',
+                status: 'running' as const,
+              }],
+            }));
+          }
+        } else if (sub.type === 'tool_call_delta') {
+          const delta = sub.delta || sub.args || '';
+          if (delta) {
+            set((s) => ({
+              toolCalls: s.toolCalls.map((tc) =>
+                tc.id === sub.toolCallId ? { ...tc, args: tc.args + delta } : tc
+              ),
+            }));
+          }
+        } else if (sub.type === 'tool_call_end') {
+          set((s) => ({
+            toolCalls: s.toolCalls.map((tc) =>
+              tc.id === sub.toolCallId ? { ...tc, status: 'done' as const } : tc
+            ),
+          }));
         }
-        // text_end: nothing to do; message_end finalizes.
         break;
       }
       case 'message_end': {
-        const msg = event.message;
-        const isAssistant =
-          msg?.role === 'assistant' ||
-          (msg?.role === undefined && get().streamingText.length > 0);
+        const msg = typeof event.message === 'string' ? undefined : event.message;
+        const isAssistant = msg?.role === 'assistant' ||
+          (msg?.role === undefined && (get().streamingText.length > 0 || get().streamingThinking.length > 0));
         if (!isAssistant) break;
-        const { streamingText, messages } = get();
-        if (streamingText) {
-          // Streamed text wins — finalize it with any trailing metadata.
+
+        const { streamingText, streamingThinking, messages, currentModel } = get();
+
+        // If we have streamed content, use it; otherwise use the message content
+        if (streamingText || streamingThinking) {
+          const content: OmpContentBlock[] = [];
+          // Include thinking from stream or from message
+          if (streamingThinking) {
+            content.push({ type: 'thinking', thinking: streamingThinking });
+          } else if (msg?.content) {
+            const msgThinking = msg.content.find((c) => c.type === 'thinking');
+            if (msgThinking) content.push(msgThinking);
+          }
+          // Include text from stream or from message
+          if (streamingText) {
+            content.push({ type: 'text', text: streamingText });
+          } else if (msg?.content) {
+            const msgText = msg.content.find((c) => c.type === 'text');
+            if (msgText) content.push(msgText);
+          }
+          // Include tool_use blocks from message
+          if (msg?.content) {
+            for (const block of msg.content) {
+              if (block.type === 'tool_use') content.push(block);
+            }
+          }
           const finalized: OmpMessage = {
             role: 'assistant',
-            content: [{ type: 'text', text: streamingText }],
-            model: msg?.model,
+            content,
+            model: msg?.model ?? currentModel ?? undefined,
             usage: msg?.usage,
-            cost: event.cost,
-            duration: event.duration,
-            ttft: event.ttft,
+            cost: msg?.cost ?? event.cost,
+            duration: msg?.duration ?? event.duration,
+            ttft: msg?.ttft ?? event.ttft,
           };
-          set({ messages: [...messages, finalized], streamingText: '' });
+          set({ messages: [...messages, finalized], streamingText: '', streamingThinking: '' });
         } else if (msg?.content && msg.content.length > 0) {
+          // Server delivered complete content
           const finalized: OmpMessage = {
             role: 'assistant',
             content: msg.content,
             model: msg.model,
             usage: msg.usage,
-            cost: event.cost,
-            duration: event.duration,
-            ttft: event.ttft,
+            cost: msg.cost ?? event.cost,
+            duration: msg.duration ?? event.duration,
+            ttft: msg.ttft ?? event.ttft,
           };
           set((s) => ({ messages: [...s.messages, finalized] }));
         }
@@ -166,13 +231,58 @@ export const useStore = create<StoreState>((set, get) => {
         break;
       }
       case 'custom': {
-        // Reserved for future UI extensions.
+        const ct = event.customType || (event.data && (event.data as Record<string, unknown>).customType) || '';
+        if (ct === 'tool_execution_start' || ct === 'toolₑxecutionₛtart') {
+          const data = event.data as Record<string, unknown> | undefined;
+          if (data?.toolCallId && data?.toolName) {
+            set((s) => ({
+              toolCalls: [...s.toolCalls, {
+                id: String(data.toolCallId),
+                name: String(data.toolName),
+                args: '',
+                status: 'running' as const,
+              }],
+            }));
+          }
+        } else if (ct === 'tool_execution_end' || ct === 'toolₑxecutionₑnd') {
+          const data = event.data as Record<string, unknown> | undefined;
+          if (data?.toolCallId) {
+            set((s) => ({
+              toolCalls: s.toolCalls.map((tc) =>
+                tc.id === String(data.toolCallId) ? { ...tc, status: 'done' as const } : tc
+              ),
+            }));
+          }
+        }
+        break;
+      }
+      case 'notice': {
+        const noticeText = typeof event.message === 'string' ? event.message : '';
+        if (event.level && noticeText) {
+          // Skip advisor noise
+          if (!noticeText.includes('Advisor')) {
+            set((s) => ({
+              notices: [...s.notices, { level: event.level!, message: noticeText }],
+            }));
+          }
+        }
+        break;
+      }
+      case 'title':
+      case 'title_change': {
+        if (event.title) set({ sessionTitle: event.title });
+        break;
+      }
+      case 'thinking_level_change': {
+        if (event.thinkingLevel) set({ thinkingLevel: event.thinkingLevel as ThinkingLevel });
+        break;
+      }
+      default: {
+        // Silently ignore unknown event types (advisor_cost_changed, service_tier_change, etc.)
         break;
       }
     }
   };
-
-  // ─── store ──────────────────────────────────────────────────────────────────
 
   return {
     // connection
@@ -187,44 +297,34 @@ export const useStore = create<StoreState>((set, get) => {
       set({ serverUrl: url });
       AsyncStorage.setItem(KEY_URL, url).catch(() => {});
     },
-
     setToken: (token) => {
       set({ token });
       AsyncStorage.setItem(KEY_TOKEN, token).catch(() => {});
     },
-
     connect: () => {
       const { serverUrl, token } = get();
       if (!serverUrl) return;
-
-      // Tear down any existing connection before starting a fresh one.
       wsService?.disconnect();
       wsService = new WebSocketService();
-
       wsService.onMessage = (msg) => get().processWsEvent(msg);
       wsService.onStatusChange = (status) => {
         set({ wsStatus: status });
         if (status === 'connected') {
-          // Prime the UI with sessions + server status once connected.
           get().refreshSessions();
           wsService?.send({ type: 'get_status' });
         }
       };
-
       wsService.connect(serverUrl, token);
     },
-
     disconnect: () => {
       wsService?.disconnect();
       wsService = null;
       set({ wsStatus: 'disconnected' });
     },
-
     startTunnel: () => {
       wsService?.send({ type: 'start_tunnel' });
       set({ tunnelStatus: 'starting' });
     },
-
     stopTunnel: () => {
       wsService?.send({ type: 'stop_tunnel' });
     },
@@ -233,12 +333,35 @@ export const useStore = create<StoreState>((set, get) => {
     currentSessionId: null,
     messages: [],
     streamingText: '',
+    streamingThinking: '',
     isGenerating: false,
     currentModel: null,
+    selectedModel: null,
+    thinkingLevel: 'high' as ThinkingLevel,
+    selectedCwd: null,
+    toolCalls: [],
+    notices: [],
+    sessionTitle: null,
+
+    setSelectedModel: (model) => {
+      set({ selectedModel: model });
+      AsyncStorage.setItem(KEY_MODEL, model).catch(() => {});
+    },
+    setThinkingLevel: (level) => {
+      set({ thinkingLevel: level });
+      AsyncStorage.setItem(KEY_THINKING, level).catch(() => {});
+    },
+
+    setSelectedCwd: (cwd) => {
+      set({ selectedCwd: cwd });
+      AsyncStorage.setItem(KEY_CWD, cwd).catch(() => {});
+    },
 
     sendMessage: (content, opts) => {
       if (!wsService) return;
       const state = get();
+      const model = opts?.model ?? state.selectedModel ?? state.currentModel ?? undefined;
+      const thinking = opts?.thinking ?? state.thinkingLevel ?? undefined;
       const userMessage: OmpMessage = {
         role: 'user',
         content: [{ type: 'text', text: content }],
@@ -247,16 +370,19 @@ export const useStore = create<StoreState>((set, get) => {
         messages: [...state.messages, userMessage],
         isGenerating: true,
         streamingText: '',
-        currentModel: opts?.model ?? state.currentModel,
+        streamingThinking: '',
+        toolCalls: [],
+        notices: [],
+        currentModel: model ?? state.currentModel,
       });
       wsService.send({
         type: 'send',
         content,
         sessionId: state.currentSessionId ?? null,
-        model: opts?.model,
-        thinking: opts?.thinking,
+        model,
+        thinking,
         autoApprove: opts?.autoApprove,
-        cwd: opts?.cwd,
+        cwd: opts?.cwd ?? state.selectedCwd ?? undefined,
       });
     },
 
@@ -271,7 +397,11 @@ export const useStore = create<StoreState>((set, get) => {
         currentSessionId: sessionId,
         messages: [],
         streamingText: '',
+        streamingThinking: '',
         isGenerating: false,
+        toolCalls: [],
+        notices: [],
+        sessionTitle: null,
       });
       wsService?.send({ type: 'get_history', sessionId });
     },
@@ -281,7 +411,11 @@ export const useStore = create<StoreState>((set, get) => {
         currentSessionId: null,
         messages: [],
         streamingText: '',
+        streamingThinking: '',
         isGenerating: false,
+        toolCalls: [],
+        notices: [],
+        sessionTitle: null,
       });
     },
 
@@ -291,7 +425,6 @@ export const useStore = create<StoreState>((set, get) => {
           processEvent(msg.event, msg.sessionId);
           break;
         case 'complete':
-          // Generation finished — flush any un-finalized stream, then stop.
           flushStream();
           set({ isGenerating: false });
           break;
@@ -307,7 +440,9 @@ export const useStore = create<StoreState>((set, get) => {
             currentSessionId: msg.sessionId,
             messages: msg.messages,
             streamingText: '',
+            streamingThinking: '',
             isGenerating: false,
+            sessionTitle: msg.title || null,
           });
           break;
         case 'status':
@@ -326,7 +461,6 @@ export const useStore = create<StoreState>((set, get) => {
     // sessions
     sessions: [],
     loadingSessions: false,
-
     refreshSessions: () => {
       set({ loadingSessions: true });
       wsService?.send({ type: 'list_sessions' });
@@ -335,11 +469,20 @@ export const useStore = create<StoreState>((set, get) => {
     // hydration
     hydrate: async () => {
       try {
-        const [url, token] = await Promise.all([
+        const [url, token, model, thinking, cwd] = await Promise.all([
           AsyncStorage.getItem(KEY_URL),
           AsyncStorage.getItem(KEY_TOKEN),
+          AsyncStorage.getItem(KEY_MODEL),
+          AsyncStorage.getItem(KEY_THINKING),
+          AsyncStorage.getItem(KEY_CWD),
         ]);
-        set({ serverUrl: url ?? '', token: token ?? '' });
+        set({
+          serverUrl: url ?? '',
+          token: token ?? '',
+          selectedModel: model ?? null,
+          thinkingLevel: (thinking as ThinkingLevel) ?? 'high',
+          selectedCwd: cwd ?? null,
+        });
       } catch {
         // Leave defaults on read failure.
       }

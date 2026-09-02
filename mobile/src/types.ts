@@ -2,11 +2,6 @@
  * PURPOSE: Shared TypeScript types for the OMP bridge WebSocket protocol.
  * Covers OMP streaming events, chat messages, session summaries, server
  * status, and the client/server WebSocket message envelopes.
- *
- * These are plain interfaces kept simple on purpose — the bridge protocol
- * is the single source of truth for their shape. Untrusted/external fields
- * (tool args, usage stats, custom payloads) are typed `unknown` so callers
- * must validate before consuming them.
  */
 
 // ─── Content blocks & messages ────────────────────────────────────────────────
@@ -15,15 +10,12 @@ export type OmpContentBlockType = 'text' | 'thinking' | 'tool_use' | 'tool_resul
 
 export interface OmpContentBlock {
   type: OmpContentBlockType;
-  /** Present when type === 'text'. */
   text?: string;
-  /** Present when type === 'thinking'. */
   thinking?: string;
-  /** Present when type === 'tool_use'. */
+  thinkingSignature?: string;
+  toolCallId?: string;
   toolName?: string;
-  /** Tool call arguments (type === 'tool_use'); unvalidated server payload. */
   args?: unknown;
-  /** Tool result payload (type === 'tool_result'); unvalidated server payload. */
   content?: unknown;
 }
 
@@ -33,15 +25,13 @@ export interface OmpMessage {
   role: OmpMessageRole;
   content: OmpContentBlock[];
   model?: string;
-  /** Token usage stats from the provider; shape varies by provider. */
   usage?: unknown;
   cost?: number;
   duration?: number;
-  /** Time to first token, ms. */
   ttft?: number;
 }
 
-// ─── Session summary (list_sessions response) ──────────────────────────────────
+// ─── Session summary ──────────────────────────────────────────────────────────
 
 export interface SessionSummary {
   id: string;
@@ -51,8 +41,6 @@ export interface SessionSummary {
   messageCount: number;
   size: number;
 }
-
-// ─── Server status (get_status response) ───────────────────────────────────────
 
 export interface ServerStatus {
   ompVersion: string;
@@ -75,53 +63,68 @@ export type OmpEventType =
   | 'message_end'
   | 'turn_end'
   | 'agent_end'
-  | 'custom';
+  | 'custom'
+  | 'notice'
+  | 'advisor_cost_changed'
+  | 'title'
+  | 'title_change'
+  | 'thinking_level_change'
+  | 'service_tier_change';
 
-export type AssistantMessageEventType = 'text_start' | 'text_delta' | 'text_end';
+export type AssistantMessageEventType =
+  | 'text_start' | 'text_delta' | 'text_end'
+  | 'thinking_start' | 'thinking_delta' | 'thinking_end'
+  | 'tool_call_start' | 'tool_call_delta' | 'tool_call_end';
 
 export interface AssistantMessageEvent {
   type: AssistantMessageEventType;
-  /** The delta text for text_delta; full text for text_start/text_end. */
   text?: string;
-  /** The delta text for text_delta events (OMP uses this field). */
   delta?: string;
   contentIndex?: number;
   content?: string;
+  toolCallId?: string;
+  toolName?: string;
+  args?: string;
 }
 
 export interface OmpEvent {
   type: OmpEventType;
   sessionId?: string;
-  /** Full message object for message_start, message_end, turn_end events. */
-  message?: OmpMessage;
+  /** OmpMessage for message_start/end/turn_end; string for notice events. */
+  message?: OmpMessage | string;
   role?: OmpMessageRole;
   model?: string;
-  /** Final content for message events that carry it directly. */
   content?: OmpContentBlock[];
-  /** Streaming sub-events for message_update. */
   assistantMessageEvent?: AssistantMessageEvent;
-  /** Token usage stats; shape varies by provider. */
   usage?: unknown;
   cost?: number;
   duration?: number;
   ttft?: number;
-  /** Arbitrary payload for 'custom' events; unvalidated. */
   data?: unknown;
+  // notice events
+  level?: string;
+  // custom events
+  customType?: string;
+  // title events
+  title?: string;
+  // thinking level
+  thinkingLevel?: string;
+}
+
+// ─── Tool call tracking ──────────────────────────────────────────────────────
+
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  args: string;
+  result?: string;
+  status: 'running' | 'done' | 'error';
 }
 
 // ─── WebSocket protocol envelopes ──────────────────────────────────────────────
 
-/** Commands the client sends to the bridge server. */
 export type WsClientCommand =
-  | {
-      type: 'send';
-      content: string;
-      sessionId?: string | null;
-      model?: string;
-      thinking?: string;
-      autoApprove?: boolean;
-      cwd?: string;
-    }
+  | { type: 'send'; content: string; sessionId?: string | null; model?: string; thinking?: string; autoApprove?: boolean; cwd?: string }
   | { type: 'list_sessions' }
   | { type: 'get_history'; sessionId: string }
   | { type: 'get_status' }
@@ -129,7 +132,6 @@ export type WsClientCommand =
   | { type: 'start_tunnel' }
   | { type: 'stop_tunnel' };
 
-/** Messages the bridge server sends to the client. */
 export type WsServerMessage =
   | { type: 'event'; sessionId: string; event: OmpEvent }
   | { type: 'complete'; sessionId: string }
@@ -138,3 +140,23 @@ export type WsServerMessage =
   | { type: 'history'; sessionId: string; messages: OmpMessage[]; title?: string }
   | { type: 'status'; status: ServerStatus }
   | { type: 'tunnel'; url: string | null; status: string };
+
+export type WsStatus = 'disconnected' | 'connecting' | 'connected';
+
+// ─── Model presets ───────────────────────────────────────────────────────────
+
+export interface ModelPreset {
+  label: string;
+  value: string;
+}
+
+export const MODEL_PRESETS: ModelPreset[] = [
+  { label: 'GLM-5.2', value: 'wandb-proxy/zai-org/GLM-5.2' },
+  { label: 'Qwen 3.8 Max', value: 'dashscope-china/qwen3.8-max' },
+  { label: 'GLM-5.2 Smol', value: 'synthetic-openai/hf:zai-org/GLM-5.2' },
+  { label: 'MiniMax M3', value: 'minimax-china-proxy/MiniMax-M3' },
+  { label: 'Muse Spark', value: 'meta/muse-spark-1.2' },
+];
+
+export const THINKING_LEVELS = ['off', 'low', 'medium', 'high', 'max'] as const;
+export type ThinkingLevel = typeof THINKING_LEVELS[number];
