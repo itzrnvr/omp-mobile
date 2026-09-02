@@ -65,9 +65,11 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
             variant={tunnelStatus === "active" ? "outline" : "filled"}
             size="md"
             fullWidth
+            loading={tunnelStatus === "starting"}
+            disabled={tunnelStatus === "starting"}
             onPress={tunnelStatus === "active" ? stopTunnel : startTunnel}
           >
-            {tunnelStatus === "active" ? "Stop Tunnel" : "Start Tunnel"}
+            {tunnelStatus === "active" ? "Stop Tunnel" : tunnelStatus === "starting" ? "Starting..." : "Start Tunnel"}
           </Button>
         </Stack>
       </Card>
