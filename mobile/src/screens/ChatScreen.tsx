@@ -1,11 +1,11 @@
 /*
- * PURPOSE: Chat screen — full conversation interface with OMP.
- * Shows message history, streaming responses, reasoning, tool calls,
- * model selector, thinking level selector, working directory, and input bar.
+ * PURPOSE: Chat screen following ChatKit design guidelines.
+ * Model picker is a compact popover (not horizontal scroll).
+ * Composer is elevated pill. Header has model badge with chevron.
  */
 
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, TextInput } from "react-native";
+import { View, StyleSheet, KeyboardAvoidingView, Platform, Pressable, TextInput, ScrollView } from "react-native";
 import { colors, spacing, radii } from "../theme";
 import { MessageList } from "../components/chat/MessageList";
 import { ChatInput } from "../components/chat/ChatInput";
@@ -16,7 +16,7 @@ import type { ThinkingLevel } from "../types";
 
 export function ChatScreen({ route }: { route: { params?: { sessionId?: string } } }) {
   const [input, setInput] = useState("");
-  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [cwdInput, setCwdInput] = useState("");
   const {
     messages,
@@ -43,11 +43,8 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   const sessionId = route?.params?.sessionId;
 
   useEffect(() => {
-    if (sessionId) {
-      loadSession(sessionId);
-    } else {
-      startNewSession();
-    }
+    if (sessionId) loadSession(sessionId);
+    else startNewSession();
   }, [sessionId]);
 
   useEffect(() => {
@@ -58,11 +55,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     if (!input.trim()) return;
     sendMessage(input.trim());
     setInput("");
-  };
-
-  const handleCwdChange = (text: string) => {
-    setCwdInput(text);
-    setSelectedCwd(text);
   };
 
   if (wsStatus !== "connected") {
@@ -83,43 +75,43 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* Header with model + thinking level */}
+      {/* Header with model badge + chevron */}
       <View style={styles.header}>
-        <Pressable style={styles.modelBadge} onPress={() => setShowModelPicker(!showModelPicker)}>
-          <Text size="xs" weight="medium" color="accent">{modelLabel}</Text>
-          <Text size="xs" color="textMuted">{"  think:" + thinkingLevel}</Text>
+        <Pressable style={styles.modelBadge} onPress={() => setShowPicker(!showPicker)}>
+          <Text size="sm" weight="medium" color="accent">{modelLabel}</Text>
+          <Text size="xs" color="textMuted">{"  " + thinkingLevel + " \u25BE"}</Text>
         </Pressable>
         {sessionTitle && (
           <Text size="xs" color="textMuted" numberOfLines={1} style={styles.title}>{sessionTitle}</Text>
         )}
       </View>
 
-      {/* Model picker dropdown */}
-      {showModelPicker && (
-        <View style={styles.modelPicker}>
-          {/* Model presets */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modelScroll}>
+      {/* Compact popover model picker (ChatKit style) */}
+      {showPicker && (
+        <Pressable style={styles.pickerOverlay} onPress={() => setShowPicker(false)}>
+          <Pressable style={styles.pickerPopover} onPress={(e) => e.stopPropagation()}>
+            {/* Model options — stacked list with name + description */}
+            <Text size="xs" weight="medium" color="textMuted" style={styles.pickerSection}>MODEL</Text>
             {MODEL_PRESETS.map((m) => (
               <Pressable
                 key={m.value}
                 style={[styles.modelOption, selectedModel === m.value && styles.modelOptionActive]}
-                onPress={() => { setSelectedModel(m.value); }}
+                onPress={() => setSelectedModel(m.value)}
               >
-                <Text size="xs" weight="medium" color={selectedModel === m.value ? "text" : "textSecondary"}>
+                <Text size="sm" weight="medium" color={selectedModel === m.value ? "accent" : "text"}>
                   {m.label}
                 </Text>
+                <Text size="xs" color="textMuted">{m.value.split("/").pop()}</Text>
               </Pressable>
             ))}
-          </ScrollView>
 
-          {/* Thinking level */}
-          <View style={styles.thinkingRow}>
-            <Text size="xs" color="textMuted">Thinking:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {/* Thinking level */}
+            <Text size="xs" weight="medium" color="textMuted" style={styles.pickerSection}>THINKING</Text>
+            <View style={styles.thinkingRow}>
               {THINKING_LEVELS.map((lvl) => (
                 <Pressable
                   key={lvl}
-                  style={[styles.thinkingOption, thinkingLevel === lvl && styles.thinkingOptionActive]}
+                  style={[styles.thinkingPill, thinkingLevel === lvl && styles.thinkingPillActive]}
                   onPress={() => setThinkingLevel(lvl as ThinkingLevel)}
                 >
                   <Text size="xs" weight="medium" color={thinkingLevel === lvl ? "text" : "textSecondary"}>
@@ -127,23 +119,23 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
                   </Text>
                 </Pressable>
               ))}
-            </ScrollView>
-          </View>
+            </View>
 
-          {/* Working directory */}
-          <View style={styles.cwdRow}>
-            <Text size="xs" color="textMuted">Folder:</Text>
-            <TextInput
-              style={styles.cwdInput}
-              value={cwdInput}
-              onChangeText={handleCwdChange}
-              placeholder="C:\\Users\\babys\\tmp"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        </View>
+            {/* Working directory */}
+            <Text size="xs" weight="medium" color="textMuted" style={styles.pickerSection}>FOLDER</Text>
+            <View style={styles.cwdRow}>
+              <TextInput
+                style={styles.cwdInput}
+                value={cwdInput}
+                onChangeText={(t) => { setCwdInput(t); setSelectedCwd(t); }}
+                placeholder="C:\\Users\\babys\\tmp"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
       )}
 
       {/* Messages */}
@@ -158,14 +150,14 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         />
       </View>
 
-      {/* Input */}
+      {/* Composer */}
       <ChatInput
         value={input}
         onChangeText={setInput}
         onSend={handleSend}
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
-        placeholder={isGenerating ? "Generating..." : "Send a message..."}
+        placeholder={isGenerating ? "Generating..." : "Ask anything..."}
       />
     </KeyboardAvoidingView>
   );
@@ -183,76 +175,90 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.bgSecondary,
   },
+  // Model badge: pill with accent text + chevron
   modelBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   title: { flex: 1, textAlign: "right" },
-  modelPicker: {
-    backgroundColor: colors.bgSecondary,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: spacing.sm,
+
+  // Popover overlay (tap to dismiss)
+  pickerOverlay: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 100,
   },
-  modelScroll: { paddingHorizontal: spacing.lg, gap: spacing.xs },
-  modelOption: {
+  // ChatKit: compact popover — surface-2 bg, 12px radius, shadow
+  pickerPopover: {
+    position: "absolute",
+    top: 56,
+    left: spacing.lg,
+    right: spacing.lg,
     backgroundColor: colors.surface,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.xs,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
-  modelOptionActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
+  pickerSection: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    letterSpacing: 0.5,
   },
-  thinkingRow: {
+  // Model option: stacked list with name + description
+  modelOption: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.sm,
   },
-  thinkingOption: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    marginRight: spacing.xs,
+  modelOptionActive: {
+    backgroundColor: colors.surfaceHover,
+  },
+  // Thinking pills
+  thinkingRow: {
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  thinkingPill: {
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  thinkingOptionActive: {
+  thinkingPillActive: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
+  // CWD input
   cwdRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
   },
   cwdInput: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radii.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    backgroundColor: colors.inputBg,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.text,
     fontSize: 12,
     fontFamily: "monospace",
   },
+
   messagesContainer: { flex: 1 },
   disconnected: {
     flex: 1,

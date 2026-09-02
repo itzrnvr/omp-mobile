@@ -1,10 +1,11 @@
 /*
- * PURPOSE: Chat input bar — text input with send/cancel button.
- * Grows with content, supports multiline, shows cancel when generating.
+ * PURPOSE: Chat composer following ChatKit design guidelines.
+ * Elevated pill-shaped composer with focus glow, states for
+ * empty/typing/streaming. Attachment and tool area at bottom.
  */
 
 import React from "react";
-import { View, TextInput, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, TextInput, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, fontSizes, radii } from "../../theme";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -23,13 +24,14 @@ export function ChatInput({
   onSend,
   onCancel,
   isGenerating,
-  placeholder = "Send a message...",
+  placeholder = "Ask anything...",
 }: ChatInputProps) {
   const canSend = value.trim().length > 0 && !isGenerating;
+  const [focused, setFocused] = React.useState(false);
 
   return (
     <View style={styles.container}>
-      <View style={styles.inputWrapper}>
+      <View style={[styles.composer, focused && styles.composerFocused]}>
         <TextInput
           style={styles.input}
           value={value}
@@ -39,72 +41,82 @@ export function ChatInput({
           multiline
           maxLength={8000}
           editable={!isGenerating}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           textAlignVertical="top"
         />
+        {isGenerating ? (
+          <Pressable style={styles.stopButton} onPress={onCancel}>
+            <Ionicons name="stop" size={16} color={colors.error} />
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.sendButton, canSend && styles.sendButtonActive]}
+            onPress={onSend}
+            disabled={!canSend}
+          >
+            <Ionicons
+              name="arrow-up"
+              size={18}
+              color={canSend ? colors.bg : colors.textMuted}
+            />
+          </Pressable>
+        )}
       </View>
-
-      {isGenerating ? (
-        <Pressable style={styles.cancelButton} onPress={onCancel}>
-          <Ionicons name="stop-circle" size={22} color={colors.error} />
-        </Pressable>
-      ) : (
-        <Pressable
-          style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-          onPress={onSend}
-          disabled={!canSend}
-        >
-          <Ionicons name="arrow-up" size={20} color={canSend ? colors.text : colors.textMuted} />
-        </Pressable>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.bg,
+  },
+  // ChatKit: elevated pill composer, 20px radius, subtle border
+  composer: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.bgSecondary,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  inputWrapper: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
+    backgroundColor: colors.inputBg,
+    borderRadius: radii.composer,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    minHeight: 40,
-    maxHeight: 120,
+    minHeight: 48,
+  },
+  // ChatKit: focus state — accent border + glow
+  composerFocused: {
+    borderColor: colors.accentStrong,
   },
   input: {
+    flex: 1,
     fontSize: fontSizes.md,
     color: colors.text,
     padding: 0,
     margin: 0,
     minHeight: 24,
-    maxHeight: 100,
+    maxHeight: 120,
+    lineHeight: 22,
   },
+  // Send button: circular, accent when active
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceHover,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendButtonDisabled: {
-    backgroundColor: colors.surface,
+  sendButtonActive: {
+    backgroundColor: colors.accent,
   },
-  cancelButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  // Stop button: circular with error border
+  stopButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",

@@ -1,7 +1,11 @@
 /*
- * PURPOSE: Chat message component — renders a single user or assistant message
- * with avatar, text content, thinking blocks, tool calls, and usage info.
- * Following Mantine-inspired spacing and typography.
+ * PURPOSE: Chat message component following ChatKit design guidelines.
+ * - User messages: contained bubble with asymmetric corners (18px 18px 5px 18px)
+ * - Assistant messages: BUBBLELESS — open text block, transparent background
+ * - Thinking blocks: collapsible, dimmed surface
+ * - Tool calls: bordered cards with expandable args
+ * - Metadata: 11px muted, shown below message
+ * - Streaming: cursor indicator on last block
  */
 
 import React from "react";
@@ -18,47 +22,60 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const isUser = message.role === "user";
-  const roleColor = isUser ? colors.user : colors.assistant;
-
   const content = message.content || [];
   const textBlocks = content.filter((c) => c.type === "text");
   const thinkingBlocks = content.filter((c) => c.type === "thinking");
   const toolBlocks = content.filter((c) => c.type === "tool_use");
 
+  if (isUser) {
+    // ── User message: contained bubble, right-aligned, asymmetric corners ──
+    return (
+      <View style={styles.userContainer}>
+        <View style={styles.userBubble}>
+          {textBlocks.map((block, i) => (
+            <Text key={i} size="md" color="text" style={styles.userText}>
+              {block.text || ""}
+            </Text>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  // ── Assistant message: bubbleless, left-aligned, transparent bg ──
   return (
-    <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
-      {!isUser && <Avatar size={32} color={roleColor} label="O" />}
+    <View style={styles.assistantContainer}>
+      <View style={styles.assistantContent}>
+        {/* Thinking blocks */}
+        {thinkingBlocks.map((block, i) => (
+          <ThinkingBlock key={"t" + i} text={block.thinking || ""} />
+        ))}
 
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-        {thinkingBlocks.length > 0 && (
-          <View style={styles.thinkingSection}>
-            {thinkingBlocks.map((block: OmpContentBlock, i: number) => (
-              <ThinkingBlock key={i} text={block.thinking || ""} />
-            ))}
-          </View>
-        )}
-
-        {textBlocks.map((block: OmpContentBlock, i: number) => (
-          <Text key={i} size="md" color="text" style={styles.textBlock}>
+        {/* Text content */}
+        {textBlocks.map((block, i) => (
+          <Text
+            key={"x" + i}
+            size="md"
+            color="text"
+            style={styles.assistantText}
+          >
             {block.text || ""}
             {isStreaming && i === textBlocks.length - 1 ? " \u258B" : ""}
           </Text>
         ))}
 
-        {toolBlocks.length > 0 && (
-          <View style={styles.toolSection}>
-            {toolBlocks.map((block: OmpContentBlock, i: number) => (
-              <View key={i} style={styles.toolCall}>
-                <Text size="xs" weight="medium" color="textSecondary">
-                  {"🔧 " + (block.toolName || "tool")}
-                </Text>
-              </View>
-            ))}
+        {/* Tool calls */}
+        {toolBlocks.map((block, i) => (
+          <View key={"c" + i} style={styles.toolCallCard}>
+            <Text size="xs" weight="medium" color="textSecondary">
+              {"\u2699 " + (block.toolName || "tool")}
+            </Text>
           </View>
-        )}
+        ))}
 
-        {!isUser && (message.cost || message.duration || message.model) && (
-          <View style={styles.usageBar}>
+        {/* Metadata bar */}
+        {(message.model || message.cost || message.duration) && !isStreaming && (
+          <View style={styles.metadataBar}>
             {message.model && (
               <Text size="xs" color="textMuted">{message.model}</Text>
             )}
@@ -73,8 +90,6 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
           </View>
         )}
       </View>
-
-      {isUser && <Avatar size={32} color={colors.user} label="U" />}
     </View>
   );
 }
@@ -87,10 +102,10 @@ function ThinkingBlock({ text }: { text: string }) {
     <Pressable onPress={() => setExpanded(!expanded)} style={styles.thinkingBlock}>
       <View style={styles.thinkingHeader}>
         <Text size="xs" weight="medium" color="textMuted">
-          {"Thinking " + (expanded ? "\u25BE" : "\u25B8")}
+          {"\u2756 Thinking " + (expanded ? "\u25BE" : "\u25B8")}
         </Text>
       </View>
-      <Text size="xs" color="textMuted" style={styles.thinkingText}>
+      <Text size="sm" color="textMuted" style={styles.thinkingText}>
         {expanded ? text : preview}
       </Text>
     </Pressable>
@@ -98,53 +113,69 @@ function ThinkingBlock({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    gap: spacing.sm,
+  // User: right-aligned, contained bubble, asymmetric corners
+  userContainer: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  userContainer: { justifyContent: "flex-end" },
-  assistantContainer: { justifyContent: "flex-start" },
-  bubble: {
-    maxWidth: "85%",
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    alignItems: "flex-end",
   },
   userBubble: {
-    backgroundColor: colors.surfaceActive,
-    borderTopRightRadius: radii.xs,
+    maxWidth: "80%",
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.userMessage,
+    borderRadius: radii.xl,
+    borderBottomRightRadius: 5, // ChatKit asymmetric corner
   },
-  assistantBubble: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xs,
+  userText: {
+    lineHeight: lineHeights.md,
   },
-  textBlock: { lineHeight: lineHeights.md },
-  thinkingSection: { gap: spacing.xs },
+
+  // Assistant: bubbleless, left-aligned, transparent
+  assistantContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+  },
+  assistantContent: {
+    maxWidth: "92%",
+    gap: spacing.xs,
+  },
+  assistantText: {
+    lineHeight: lineHeights.md,
+  },
+
+  // Thinking: collapsible dimmed block
   thinkingBlock: {
     backgroundColor: colors.bgSecondary,
     borderRadius: radii.md,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
+    marginBottom: spacing.xs,
   },
-  thinkingHeader: { marginBottom: spacing.xs },
-  thinkingText: { lineHeight: lineHeights.sm },
-  toolSection: { gap: spacing.xs, marginTop: spacing.xs },
-  toolCall: {
-    backgroundColor: colors.bgSecondary,
-    borderRadius: radii.sm,
-    padding: spacing.sm,
+  thinkingHeader: {
+    marginBottom: spacing.xs,
+  },
+  thinkingText: {
+    lineHeight: lineHeights.sm,
+  },
+
+  // Tool call: bordered card
+  toolCallCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.border,
+    marginBottom: spacing.xs,
   },
-  usageBar: {
+
+  // Metadata: compact, muted, horizontal
+  metadataBar: {
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
   },
 });
