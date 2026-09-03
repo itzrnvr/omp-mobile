@@ -43,6 +43,24 @@ interface SessionHeader {
 }
 
 /**
+/** Pull plain text out of a message content field (string or content-part array). */
+function extractText(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join(" ")
+      .trim();
+  }
+  return "";
+}
+
+/**
  * Parse a JSONL session file to extract metadata and message count.
  */
 async function parseSessionFile(filePath: string): Promise<SessionHeader | null> {
@@ -55,6 +73,7 @@ async function parseSessionFile(filePath: string): Promise<SessionHeader | null>
     let sessionId = "";
     let timestamp = "";
     let messageCount = 0;
+    let firstUserText = "";
 
     for (const line of lines) {
       try {
@@ -66,10 +85,18 @@ async function parseSessionFile(filePath: string): Promise<SessionHeader | null>
           timestamp = obj.timestamp || "";
         } else if (obj.type === "message") {
           messageCount++;
+          if (!firstUserText && obj.message?.role === "user") {
+            firstUserText = extractText(obj.message.content);
+          }
         }
       } catch {
         // Skip non-JSON lines
       }
+    }
+
+    // Fall back to the first user message when OMP emitted no title event.
+    if (title === "Untitled" && firstUserText) {
+      title = firstUserText.length > 48 ? firstUserText.slice(0, 48) + "…" : firstUserText;
     }
 
     // Extract session ID from filename if not found in content

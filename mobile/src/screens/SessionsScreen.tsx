@@ -12,6 +12,7 @@ import { Badge } from "../components/ui/Badge";
 import { Stack } from "../components/ui/Stack";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
+import { openChat } from "../navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SessionSummary } from "../types";
 import type { NavigationProp } from "../navigation";
@@ -32,7 +33,7 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const handleOpenSession = (session: SessionSummary) => {
-    navigation.getParent()?.navigate("Chat", { sessionId: session.id });
+    openChat(session.id);
   };
 
   const renderItem = ({ item }: { item: SessionSummary }) => (
@@ -85,6 +86,7 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
       data={sessions}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
+      style={{ backgroundColor: colors.bg }}
       contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />

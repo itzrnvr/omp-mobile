@@ -13,6 +13,7 @@ import { Button } from "../components/ui/Button";
 import { Stack } from "../components/ui/Stack";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
+import { openChat } from "../navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NavigationProp } from "../navigation";
 
@@ -75,7 +76,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
       </Card>
 
       <Stack gap="sm">
-        <Pressable style={styles.quickAction} onPress={() => navigation.getParent()?.navigate("Chat", {})}>
+        <Pressable style={styles.quickAction} onPress={() => openChat()}>
           <View style={styles.quickActionIcon}>
             <Icon name="add" size={20} color={colors.accent} />
           </View>

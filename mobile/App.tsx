@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { colors, spacing } from "./src/theme";
 import { Icon } from "./src/components/ui/Icon";
+import { rootNavigation } from "./src/navigation";
 import { useStore } from "./src/store";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
@@ -88,7 +89,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <NavigationContainer>
+      <NavigationContainer ref={rootNavigation}>
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
