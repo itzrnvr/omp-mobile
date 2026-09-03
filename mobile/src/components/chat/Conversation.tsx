@@ -17,7 +17,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 import { colors, spacing, fontSizes, radii } from "../../theme";
 import { Text } from "../ui/Text";
 
@@ -130,11 +130,7 @@ export function ConversationEmptyState({
       {icon !== undefined ? (
         icon
       ) : (
-        <Ionicons
-          name="chatbubbles-outline"
-          size={40}
-          color={colors.textMuted}
-        />
+        <Icon name="chat-outline" size={36} color={colors.textMuted} />
       )}
       <Text size="lg" color="textMuted" style={styles.emptyTitle}>
         {title}
@@ -164,7 +160,7 @@ export function ConversationScrollButton({
       accessibilityRole="button"
       accessibilityLabel="Scroll to bottom"
     >
-      <Ionicons name="chevron-down" size={20} color={colors.text} />
+      <Icon name="chevron-down" size={18} color={colors.text} />
     </Pressable>
   );
 }

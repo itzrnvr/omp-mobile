@@ -14,7 +14,7 @@ import {
   Animated,
   LayoutAnimation,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 import {
   colors,
   spacing,
@@ -97,15 +97,15 @@ export function Reasoning({ text, isStreaming = false, duration }: ReasoningProp
               style={[styles.pulseDot, { opacity: pulseOpacity }]}
             />
           ) : (
-            <Ionicons name="bulb-outline" size={14} color={colors.textMuted} />
+            <Icon name="bulb" size={13} color={colors.textMuted} />
           )}
           <Text size="sm" weight="medium" color="textMuted">
             {headerLabel}
           </Text>
         </View>
-        <Ionicons
+        <Icon
           name={expanded ? "chevron-up" : "chevron-down"}
-          size={14}
+          size={13}
           color={colors.textMuted}
         />
       </Pressable>

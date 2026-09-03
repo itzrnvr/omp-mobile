@@ -11,7 +11,7 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Stack } from "../components/ui/Stack";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NavigationProp } from "../navigation";
@@ -77,7 +77,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
       <Stack gap="sm">
         <Pressable style={styles.quickAction} onPress={() => navigation.getParent()?.navigate("Chat", {})}>
           <View style={styles.quickActionIcon}>
-            <Ionicons name="add" size={22} color={colors.accent} />
+            <Icon name="add" size={20} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">New Conversation</Text>
@@ -87,7 +87,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
 
         <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SessionsTab")}>
           <View style={styles.quickActionIcon}>
-            <Ionicons name="chatbubbles" size={22} color={colors.accent} />
+            <Icon name="chat" size={20} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">Sessions</Text>
@@ -97,7 +97,7 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
 
         <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SettingsTab")}>
           <View style={styles.quickActionIcon}>
-            <Ionicons name="settings" size={22} color={colors.accent} />
+            <Icon name="settings" size={20} color={colors.accent} />
           </View>
           <Stack gap="xs">
             <Text size="md" weight="medium" color="text">Settings</Text>

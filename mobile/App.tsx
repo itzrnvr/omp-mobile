@@ -10,9 +10,9 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
-import { Ionicons } from "@expo/vector-icons";
 
 import { colors, spacing } from "./src/theme";
+import { Icon } from "./src/components/ui/Icon";
 import { useStore } from "./src/store";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
@@ -50,7 +50,7 @@ function TabNavigator() {
         options={{
           title: "Home",
           tabBarIcon: ({ color }: { color: string }) => (
-            <Ionicons name="home" size={22} color={color} />
+            <Icon name="home" size={20} color={color} />
           ),
         }}
       />
@@ -60,7 +60,7 @@ function TabNavigator() {
         options={{
           title: "Sessions",
           tabBarIcon: ({ color }: { color: string }) => (
-            <Ionicons name="chatbubbles" size={22} color={color} />
+            <Icon name="chat" size={20} color={color} />
           ),
         }}
       />
@@ -70,7 +70,7 @@ function TabNavigator() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color }: { color: string }) => (
-            <Ionicons name="settings" size={22} color={color} />
+            <Icon name="settings" size={20} color={color} />
           ),
         }}
       />

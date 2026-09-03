@@ -15,7 +15,7 @@ import {
   Animated,
   LayoutAnimation,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 import {
   colors,
   spacing,
@@ -91,9 +91,9 @@ export function Tool({ name, args, result, status }: ToolProps) {
             {name}
           </Text>
         </View>
-        <Ionicons
+        <Icon
           name={expanded ? "chevron-up" : "chevron-down"}
-          size={12}
+          size={11}
           color={colors.textMuted}
         />
       </Pressable>
@@ -147,21 +147,21 @@ function StatusIcon({
   switch (status) {
     case "pending":
       return (
-        <Ionicons name="ellipse-outline" size={12} color={colors.textMuted} />
+        <Icon name="ellipse" size={11} color={colors.textMuted} />
       );
     case "running":
       return (
         <Animated.View style={{ transform: [{ rotate: spin }] }}>
-          <Ionicons name="sync" size={12} color={colors.warning} />
+          <Icon name="sync" size={11} color={colors.warning} />
         </Animated.View>
       );
     case "completed":
       return (
-        <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+        <Icon name="check" size={11} color={colors.success} />
       );
     case "error":
       return (
-        <Ionicons name="close-circle" size={12} color={colors.error} />
+        <Icon name="close" size={11} color={colors.error} />
       );
   }
 }

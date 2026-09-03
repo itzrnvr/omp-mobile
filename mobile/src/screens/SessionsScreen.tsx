@@ -10,7 +10,7 @@ import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Stack } from "../components/ui/Stack";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SessionSummary } from "../types";
@@ -61,7 +61,7 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   if (wsStatus !== "connected") {
     return (
       <View style={styles.empty}>
-        <Ionicons name="cloud-offline" size={40} color={colors.textMuted} />
+        <Icon name="cloud-offline" size={36} color={colors.textMuted} />
         <Text size="md" color="textMuted" style={{ marginTop: spacing.md }}>
           Not connected to server
         </Text>
@@ -72,7 +72,7 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   if (sessions.length === 0) {
     return (
       <View style={styles.empty}>
-        <Ionicons name="chatbubbles-outline" size={40} color={colors.textMuted} />
+        <Icon name="chat-outline" size={36} color={colors.textMuted} />
         <Text size="md" color="textMuted" style={{ marginTop: spacing.md }}>
           No sessions yet
         </Text>

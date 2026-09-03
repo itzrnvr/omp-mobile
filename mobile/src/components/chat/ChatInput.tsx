@@ -8,7 +8,7 @@
 import React from "react";
 import { View, TextInput, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, fontSizes, radii } from "../../theme";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 
 export interface ChatInputProps {
   value: string;
@@ -50,7 +50,7 @@ export function ChatInput({
         />
         {isGenerating ? (
           <Pressable style={styles.stopButton} onPress={onCancel}>
-            <Ionicons name="stop" size={16} color={colors.error} />
+            <Icon name="stop" size={14} color={colors.error} />
           </Pressable>
         ) : (
           <Pressable
@@ -58,9 +58,9 @@ export function ChatInput({
             onPress={onSend}
             disabled={!canSend}
           >
-            <Ionicons
-              name="arrow-up"
-              size={20}
+            <Icon
+              name="send"
+              size={18}
               color={canSend ? colors.bg : colors.textMuted}
             />
           </Pressable>

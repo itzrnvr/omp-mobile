@@ -10,7 +10,7 @@ import { FlatList, View, StyleSheet, Pressable } from "react-native";
 import { colors, spacing, radii } from "../../theme";
 import { ChatMessage } from "./ChatMessage";
 import { Text } from "../ui/Text";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 import type { OmpMessage, ToolCallInfo } from "../../types";
 
 interface MessageListProps {
@@ -55,7 +55,7 @@ export function MessageList({ messages, streamingText, streamingThinking, isGene
   if (displayMessages.length === 0 && !isGenerating) {
     return (
       <View style={styles.empty}>
-        <Ionicons name="chatbubble-ellipses-outline" size={48} color={colors.textMuted} />
+        <Icon name="chat-outline" size={44} color={colors.textMuted} />
         <Text size="lg" color="textSecondary" style={{ marginTop: spacing.lg }}>No messages yet</Text>
         <Text size="sm" color="textMuted" style={{ marginTop: spacing.xs }}>
           Send a message to start the conversation
@@ -111,7 +111,7 @@ export function MessageList({ messages, streamingText, streamingThinking, isGene
       {/* AI Elements: scroll-to-bottom button */}
       {showScrollButton && (
         <Pressable style={styles.scrollButton} onPress={scrollToBottom}>
-          <Ionicons name="chevron-down" size={20} color={colors.text} />
+          <Icon name="chevron-down" size={18} color={colors.text} />
         </Pressable>
       )}
     </View>

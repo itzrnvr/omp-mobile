@@ -8,7 +8,7 @@
 
 import React, { useState } from "react";
 import { View, StyleSheet, Pressable, ScrollView } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "../ui/Icon";
 import {
   colors,
   spacing,
@@ -43,7 +43,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name="code-slash" size={12} color={colors.textMuted} />
+          <Icon name="code" size={11} color={colors.textMuted} />
           <Text
             size="xs"
             color="textMuted"
@@ -58,9 +58,9 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
           accessibilityRole="button"
           accessibilityLabel="Copy code"
         >
-          <Ionicons
-            name={copied ? "checkmark" : "copy-outline"}
-            size={14}
+          <Icon
+            name={copied ? "check" : "copy"}
+            size={13}
             color={copied ? colors.success : colors.textMuted}
           />
           <Text
