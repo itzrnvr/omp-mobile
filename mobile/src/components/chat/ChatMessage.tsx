@@ -25,6 +25,12 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const thinkingBlocks = content.filter((c) => c.type === "thinking");
   const toolBlocks = content.filter((c) => c.type === "tool_use");
 
+  // Old print-mode sessions store empty assistant content; render nothing
+  // instead of a lone floating metadata bar.
+  if (!isUser && textBlocks.length === 0 && thinkingBlocks.length === 0 && toolBlocks.length === 0) {
+    return null;
+  }
+
   if (isUser) {
     return (
       <View style={styles.userContainer}>

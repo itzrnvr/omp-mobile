@@ -12,11 +12,13 @@ import { ChatInput } from "../components/chat/ChatInput";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
+import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MODEL_PRESETS, THINKING_LEVELS } from "../types";
 import type { ThinkingLevel } from "../types";
 
 export function ChatScreen({ route }: { route: { params?: { sessionId?: string } } }) {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [input, setInput] = useState("");
   const [showPicker, setShowPicker] = useState(false);
@@ -80,6 +82,13 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     >
       {/* Header with model badge + chevron */}
       <View style={styles.header}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          accessibilityLabel="Back"
+        >
+          <Icon name="back" size={20} color={colors.textSecondary} />
+        </Pressable>
         <Text size="md" weight="medium" color="text" numberOfLines={1} style={styles.title}>
           {sessionTitle || "New conversation"}
         </Text>
@@ -186,6 +195,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   title: { flex: 1 },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.xs,
+  },
   newChatButton: {
     width: 36,
     height: 36,

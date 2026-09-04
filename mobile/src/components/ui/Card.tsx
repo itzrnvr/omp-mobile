@@ -23,6 +23,7 @@ export interface CardProps {
   /** Shadow preset. Defaults to "none" (border does the visual separation). */
   elevation?: CardElevation;
   /** Show 1px border in theme border color. Defaults to true. */
+  /** Show 1px border in theme border color. Defaults to false (reference design uses borderless surfaces + hairline separators). */
   border?: boolean;
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -50,7 +51,7 @@ export function Card({
   padding = "lg",
   radius = "lg",
   elevation = "none",
-  border = true,
+  border = false,
   children,
   style,
 }: CardProps) {

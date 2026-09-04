@@ -1,20 +1,23 @@
 /*
- * PURPOSE: Global Icon component that renders via system fonts (emoji + unicode
- * symbols) so icons ALWAYS render — no external font dependency (Ionicons/expo-font
- * fails to load in this dev environment, leaving blank glyphs).
+ * PURPOSE: Global Icon component — real vector icons via @expo/vector-icons.
  *
- * Maps semantic icon names to universally-available glyphs:
- *   - Emoji (💬 🏠 💡 ☁) render via Android's Noto Color Emoji
- *   - Symbols (+ ⚙ ✓ ✕ ▾ ↑ ■ ↻ </>) render via Noto Sans Symbols
+ * HISTORY:
+ * - Ionicons rendered blank in the DEV client (font not loaded), so we briefly
+ *   fell back to unicode glyphs. That looked like placeholder slop.
+ * - Release builds bundle the icon font natively, so Ionicons work there.
+ *   This component keeps a small named API and maps to Ionicons names, so all
+ *   call sites stay stable.
  *
- * Usage: <Icon name="add" size={22} color={colors.accent} />
+ * GOTCHA: if icons ever render blank again, check whether the running build is
+ * a dev client (fonts load from Metro there and can fail) vs release (bundled).
  */
 
 import React from "react";
-import { Text, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 export type IconName =
   | "add"
+  | "back"
   | "chat"
   | "chat-outline"
   | "settings"
@@ -22,6 +25,7 @@ export type IconName =
   | "send"
   | "stop"
   | "chevron-down"
+  | "chevron-forward"
   | "chevron-up"
   | "check"
   | "close"
@@ -33,25 +37,27 @@ export type IconName =
   | "copy"
   | "retry";
 
-const GLYPHS: Record<IconName, string> = {
-  add: "+",
-  chat: "\u{1F4AC}",        // 💬 speech balloon
-  "chat-outline": "\u{1F5E8}", // 🗨 left speech bubble
-  settings: "\u2699",       // ⚙ gear
-  home: "\u{1F3E0}",        // 🏠 house
-  send: "\u2191",           // ↑ up arrow
-  stop: "\u25A0",           // ■ black square
-  "chevron-down": "\u25BE", // ▾ down triangle
-  "chevron-up": "\u25B4",    // ▴ up triangle
-  check: "\u2713",          // ✓ check mark
-  close: "\u2715",          // ✕ multiplication x
-  sync: "\u21BB",           // ↻ clockwise arrow
-  ellipse: "\u25CB",          // ○ white circle
-  bulb: "\u{1F4A1}",        // 💡 bulb
-  code: "</>",
-  "cloud-offline": "\u2601", // ☁ cloud
-  copy: "\u2398",           // ⎘ copy
-  retry: "\u21BA",          // ↺ counter-clockwise
+const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
+  add: "add",
+  back: "arrow-back",
+  chat: "chatbubbles",
+  "chat-outline": "chatbubbles-outline",
+  settings: "settings-outline",
+  home: "home",
+  send: "arrow-up",
+  stop: "stop",
+  "chevron-down": "chevron-down",
+  "chevron-forward": "chevron-forward",
+  "chevron-up": "chevron-up",
+  check: "checkmark",
+  close: "close",
+  sync: "sync",
+  ellipse: "ellipse-outline",
+  bulb: "bulb-outline",
+  code: "code-slash",
+  "cloud-offline": "cloud-offline-outline",
+  copy: "copy-outline",
+  retry: "refresh",
 };
 
 interface IconProps {
@@ -60,17 +66,6 @@ interface IconProps {
   color?: string;
 }
 
-export function Icon({ name, size = 20, color = "#ECECEC" }: IconProps) {
-  return (
-    <Text style={[styles.icon, { fontSize: size, color, lineHeight: size + 4 }]}>
-      {GLYPHS[name]}
-    </Text>
-  );
+export function Icon({ name, size = 20, color = "#f2f2f2" }: IconProps) {
+  return <Ionicons name={MAP[name]} size={size} color={color} />;
 }
-
-const styles = StyleSheet.create({
-  icon: {
-    textAlign: "center",
-    includeFontPadding: false,
-  },
-});

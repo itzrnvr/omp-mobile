@@ -4,6 +4,8 @@
  */
 
 import React, { useEffect } from "react";
+import { useFonts } from "expo-font";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
@@ -80,6 +82,9 @@ function TabNavigator() {
 }
 
 export default function App() {
+  // Ionicons do NOT auto-load their font in this project (blank glyphs in dev
+  // AND release until loaded explicitly). Load once at root.
+  useFonts(Ionicons.font);
   const { hydrate } = useStore();
 
   useEffect(() => {
@@ -101,12 +106,7 @@ export default function App() {
             name="Chat"
             component={ChatScreen}
             options={{
-              headerShown: true,
-              headerTitle: "Chat",
-              headerStyle: { backgroundColor: colors.bgSecondary },
-              headerTintColor: colors.text,
-              headerTitleStyle: { fontWeight: "600" },
-              headerShadowVisible: false,
+              headerShown: false,
             }}
           />
         </Stack.Navigator>

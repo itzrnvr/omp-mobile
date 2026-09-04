@@ -3,8 +3,9 @@
  * Tap a session to open it in the Chat screen.
  *
  * KEY DECISIONS:
- * - Shows a loading state while the first list_sessions round-trip is in flight
- *   (previously flashed "No sessions yet" while the server parsed 600+ files).
+ * - Borderless rows separated by hairlines (reference design), not stacked
+ *   bordered cards — card stacks read as generic/slop.
+ * - Loading state while the first list_sessions round-trip is in flight.
  * - Timestamps from OMP session filenames encode time with dashes
  *   (2026-05-07T11-42-14); formatDate restores colons before parsing.
  */
@@ -13,9 +14,6 @@ import React, { useState, useEffect } from "react";
 import { View, StyleSheet, FlatList, Pressable, RefreshControl } from "react-native";
 import { colors, spacing } from "../theme";
 import { Text } from "../components/ui/Text";
-import { Card } from "../components/ui/Card";
-import { Badge } from "../components/ui/Badge";
-import { Stack } from "../components/ui/Stack";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { openChat } from "../navigation";
@@ -38,30 +36,17 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
     setRefreshing(false);
   };
 
-  const handleOpenSession = (session: SessionSummary) => {
-    openChat(session.id);
-  };
-
   const renderItem = ({ item }: { item: SessionSummary }) => (
-    <Pressable onPress={() => handleOpenSession(item)} style={styles.sessionItem}>
-      <Card padding="md">
-        <Stack gap="xs">
-          <View style={styles.headerRow}>
-            <Text size="md" weight="medium" color="text" numberOfLines={1} style={styles.title}>
-              {item.title || "Untitled"}
-            </Text>
-            <Badge size="sm" variant="light">
-              {item.messageCount} msgs
-            </Badge>
-          </View>
-          <Text size="xs" color="textMuted" numberOfLines={1}>
-            {item.cwd}
-          </Text>
-          <Text size="xs" color="textMuted">
-            {formatDate(item.timestamp)}
-          </Text>
-        </Stack>
-      </Card>
+    <Pressable onPress={() => openChat(item.id)} style={styles.sessionRow}>
+      <View style={styles.rowMain}>
+        <Text size="md" weight="medium" color="text" numberOfLines={1}>
+          {item.title || "Untitled"}
+        </Text>
+        <Text size="xs" color="textMuted" numberOfLines={1} style={styles.meta}>
+          {item.cwd} · {formatDate(item.timestamp)} · {item.messageCount} msgs
+        </Text>
+      </View>
+      <Icon name="chevron-forward" size={16} color={colors.textMuted} />
     </Pressable>
   );
 
@@ -114,8 +99,6 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
 
 function formatDate(timestamp: string): string {
   try {
-    // OMP session filenames encode time with dashes (2026-05-07T11-42-14);
-    // restore colons so Date can parse it.
     const normalized = timestamp.replace(/T(\d{2})-(\d{2})-(\d{2})/, "T$1:$2:$3");
     const d = new Date(normalized);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -126,22 +109,19 @@ function formatDate(timestamp: string): string {
 
 const styles = StyleSheet.create({
   list: {
-    padding: spacing.lg,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
     paddingBottom: 100,
   },
-  sessionItem: {
-    marginBottom: 0,
-  },
-  headerRow: {
+  sessionRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  title: {
-    flex: 1,
-  },
+  rowMain: { flex: 1 },
+  meta: { marginTop: 3 },
   empty: {
     flex: 1,
     alignItems: "center",

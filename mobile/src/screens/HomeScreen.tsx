@@ -1,30 +1,43 @@
 /*
- * PURPOSE: Home screen — server status dashboard, connection info, quick actions.
- * Shows OMP version, tunnel status, active sessions, and quick-launch buttons.
+ * PURPOSE: Home screen — connection status dashboard + one primary action.
+ *
+ * KEY DECISIONS:
+ * - Single primary action ("New conversation"). Sessions/Settings live in the
+ *   tab bar; duplicating them here was competing navigation / decorative noise.
+ * - Borderless surface card with label/value rows and hairline-free spacing.
+ * - Tunnel status + URL shown read-only (the tunnel auto-starts server-side).
  */
 
-import React from "react";
+import React, { useEffect } from "react";
 import { View, StyleSheet, ScrollView, Pressable } from "react-native";
-import { colors, spacing, radii } from "../theme";
+import { colors, spacing } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Stack } from "../components/ui/Stack";
+import { Button } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { openChat } from "../navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { NavigationProp } from "../navigation";
 
-export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
+export function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { serverStatus, wsStatus, tunnelUrl, tunnelStatus } = useStore();
+  const { sessions, refreshSessions } = useStore();
+
+  useEffect(() => {
+    refreshSessions();
+  }, []);
 
   const statusColor = wsStatus === "connected" ? "success" : wsStatus === "connecting" ? "warning" : "error";
   const statusLabel = wsStatus === "connected" ? "Connected" : wsStatus === "connecting" ? "Connecting..." : "Disconnected";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}
+    >
       <Card padding="lg">
         <Stack gap="md">
           <View style={styles.rowBetween}>
@@ -53,37 +66,25 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
         </Stack>
       </Card>
 
-      <Stack gap="sm">
-        <Pressable style={styles.quickAction} onPress={() => openChat()}>
-          <View style={styles.quickActionIcon}>
-            <Icon name="add" size={20} color={colors.accent} />
-          </View>
-          <Stack gap="xs">
-            <Text size="md" weight="medium" color="text">New Conversation</Text>
-            <Text size="xs" color="textMuted">Start chatting with OMP</Text>
-          </Stack>
-        </Pressable>
+      <Button variant="filled" size="lg" fullWidth onPress={() => openChat()}>
+        New conversation
+      </Button>
 
-        <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SessionsTab")}>
-          <View style={styles.quickActionIcon}>
-            <Icon name="chat" size={20} color={colors.accent} />
-          </View>
-          <Stack gap="xs">
-            <Text size="md" weight="medium" color="text">Sessions</Text>
-            <Text size="xs" color="textMuted">Browse past conversations</Text>
-          </Stack>
-        </Pressable>
-
-        <Pressable style={styles.quickAction} onPress={() => navigation.navigate("SettingsTab")}>
-          <View style={styles.quickActionIcon}>
-            <Icon name="settings" size={20} color={colors.accent} />
-          </View>
-          <Stack gap="xs">
-            <Text size="md" weight="medium" color="text">Settings</Text>
-            <Text size="xs" color="textMuted">Configure server connection</Text>
-          </Stack>
-        </Pressable>
-      </Stack>
+      {sessions.length > 0 && (
+        <Stack gap="xs">
+          <Text size="xs" weight="medium" color="textMuted" style={styles.sectionLabel}>
+            RECENT
+          </Text>
+          {sessions.slice(0, 4).map((s) => (
+            <Pressable key={s.id} style={styles.recentRow} onPress={() => openChat(s.id)}>
+              <Text size="sm" color="text" numberOfLines={1} style={styles.recentTitle}>
+                {s.title || "Untitled"}
+              </Text>
+              <Icon name="chevron-forward" size={14} color={colors.textMuted} />
+            </Pressable>
+          ))}
+        </Stack>
+      )}
     </ScrollView>
   );
 }
@@ -105,21 +106,18 @@ function formatUptime(seconds: number): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
+  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: 100 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  tunnelUrlBox: {
-    backgroundColor: colors.bgSecondary, borderRadius: radii.sm,
-    padding: spacing.sm, borderWidth: 1, borderColor: colors.borderSubtle,
+  sectionLabel: { letterSpacing: 0.8, marginTop: spacing.sm },
+  recentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  tunnelUrl: { fontFamily: "monospace" },
-  quickAction: {
-    flexDirection: "row", alignItems: "center", gap: spacing.md,
-    backgroundColor: colors.surface, borderRadius: radii.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
-  },
-  quickActionIcon: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.bgSecondary, alignItems: "center", justifyContent: "center",
-  },
+  recentTitle: { flex: 1 },
 });
