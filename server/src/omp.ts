@@ -1,17 +1,17 @@
 /*
  * PURPOSE: Manages OMP CLI process lifecycle and JSON event streaming.
- * Uses node:child_process to spawn OMP, collects all stdout, and returns
- * parsed events for the caller to forward via WebSocket.
+ * Uses node:child_process to spawn OMP and streams parsed JSON events to the
+ * caller LIVE via onEvent as stdout lines arrive (line-buffered), so clients
+ * see token deltas while the model is still generating.
  *
  * ARCHITECTURE:
  *   1. Spawn OMP with --mode=json -p, write message to stdin
- *   2. Collect all stdout as text (process runs to completion)
- *   3. Parse JSON lines into events array
- *   4. Return { events, kill, done } — caller sends events via WS after done
+ *   2. Line-buffer stdout; parse each complete line into an event
+ *   3. Invoke onEvent(event) immediately AND append to handle.events
+ *   4. Return { events, kill, done, sessionId } — done resolves on exit
  *
- * NOTE: Events are returned as a batch (not streamed) to avoid Bun WebSocket
- * send-from-event-callback timing issues. The caller sends them synchronously
- * after the process exits, before the "complete" message.
+ * NOTE: handle.events still collects everything for callers that want the
+ * full transcript after completion.
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -24,6 +24,8 @@ export interface OmpSpawnOptions {
   thinking?: string;
   autoApprove?: boolean;
   cwd?: string;
+  /** Called immediately for each parsed event (live streaming). */
+  onEvent?: (event: OmpEvent) => void;
 }
 
 function buildArgs(opts: OmpSpawnOptions): string[] {
@@ -87,10 +89,28 @@ export function spawnOmp(opts: OmpSpawnOptions): OmpProcessHandle {
   child.stdin.end();
 
   let stdoutData = "";
+  let stdoutBuf = "";
   let stderrData = "";
+  const events: OmpEvent[] = [];
+  const sessionIdRef: { value: string | null } = { value: null };
+
+  const emitLine = (line: string) => {
+    const event = parseLine(line, (id) => { sessionIdRef.value = id; });
+    if (event) {
+      events.push(event);
+      if (opts.onEvent) opts.onEvent(event);
+    }
+  };
 
   child.stdout.on("data", (chunk: Buffer) => {
-    stdoutData += chunk.toString("utf-8");
+    stdoutBuf += chunk.toString("utf-8");
+    let idx = stdoutBuf.indexOf("\n");
+    while (idx !== -1) {
+      const line = stdoutBuf.slice(0, idx);
+      stdoutBuf = stdoutBuf.slice(idx + 1);
+      emitLine(line);
+      idx = stdoutBuf.indexOf("\n");
+    }
   });
 
   child.stderr.on("data", (chunk: Buffer) => {
@@ -106,13 +126,9 @@ export function spawnOmp(opts: OmpSpawnOptions): OmpProcessHandle {
             if (line.trim()) console.error(`[omp:stderr] ${line}`);
           }
         }
-        // Parse all stdout into events array
-        const sessionId: { value: string | null } = { value: null };
-        for (const line of stdoutData.split("\n")) {
-          const event = parseLine(line, (id) => { sessionId.value = id; });
-          if (event) handle.events.push(event);
-        }
-        handle.sessionId = sessionId.value;
+        // Flush any trailing partial line.
+        if (stdoutBuf.trim()) emitLine(stdoutBuf);
+        handle.sessionId = sessionIdRef.value;
         resolve(code);
       });
       child.on("error", (err) => {
@@ -120,7 +136,7 @@ export function spawnOmp(opts: OmpSpawnOptions): OmpProcessHandle {
         resolve(null);
       });
     }),
-    events: [],
+    events,
     sessionId: null,
   };
 

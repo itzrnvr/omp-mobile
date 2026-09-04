@@ -75,6 +75,8 @@ async function handleSend(
     state.ompKill();
   }
 
+  let sessionId = cmd.sessionId || "";
+
   const handle = spawnOmp({
     content: cmd.content,
     sessionId: cmd.sessionId || undefined,
@@ -82,6 +84,16 @@ async function handleSend(
     thinking: cmd.thinking,
     autoApprove: cmd.autoApprove,
     cwd: cmd.cwd,
+    // Stream each event to the client as it arrives (live token deltas).
+    onEvent: (event) => {
+      if (event.type === "session" && "id" in event && typeof event.id === "string") {
+        sessionId = event.id;
+        state.currentSessionId = sessionId;
+      }
+      if (ws.readyState === 1) {
+        sendWs(ws, { type: "event", sessionId, event });
+      }
+    },
   });
 
   state.ompKill = handle.kill;
@@ -89,14 +101,8 @@ async function handleSend(
   try {
     await handle.done;
 
-    // Forward all events synchronously after process exits
-    const sessionId = handle.sessionId || cmd.sessionId || "";
+    sessionId = handle.sessionId || sessionId;
     if (sessionId) state.currentSessionId = sessionId;
-
-    for (const event of handle.events) {
-      if (ws.readyState !== 1) break; // 1 = OPEN (ServerWebSocket.OPEN may be undefined in Bun)
-      sendWs(ws, { type: "event", sessionId, event });
-    }
 
     sendWs(ws, {
       type: "complete",

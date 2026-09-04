@@ -61,6 +61,8 @@ interface StoreState {
   toolCalls: ToolCallInfo[];
   notices: { level: string; message: string }[];
   sessionTitle: string | null;
+  /** Context tokens used by the latest assistant turn (usage.totalTokens). */
+  contextTokens: number;
   setSelectedModel: (model: string) => void;
   setThinkingLevel: (level: ThinkingLevel) => void;
   setSelectedCwd: (cwd: string) => void;
@@ -171,8 +173,13 @@ export const useStore = create<StoreState>((set, get) => {
           (msg?.role === undefined && (get().streamingText.length > 0 || get().streamingThinking.length > 0));
         if (!isAssistant) break;
 
-        const { streamingText, streamingThinking, messages, currentModel } = get();
+        // Context indicator: latest usage.totalTokens from the assistant turn.
+        const usage = msg?.usage;
+        if (usage && typeof usage === "object" && "totalTokens" in usage && typeof usage.totalTokens === "number") {
+          set({ contextTokens: usage.totalTokens });
+        }
 
+        const { streamingText, streamingThinking, messages, currentModel } = get();
         // If we have streamed content, use it; otherwise use the message content
         if (streamingText || streamingThinking) {
           const content: OmpContentBlock[] = [];
@@ -216,6 +223,19 @@ export const useStore = create<StoreState>((set, get) => {
             cost: msg.cost ?? event.cost,
             duration: msg.duration ?? event.duration,
             ttft: msg.ttft ?? event.ttft,
+          };
+          set((s) => ({ messages: [...s.messages, finalized] }));
+        } else {
+          // Turn completed with no assistant content (e.g. resumed legacy
+          // sessions where OMP emits nothing). Show an explicit placeholder so
+          // the user never sees a silent dead turn.
+          const finalized: OmpMessage = {
+            role: 'assistant',
+            content: [{ type: 'text', text: '(empty response)' }],
+            model: msg?.model ?? currentModel ?? undefined,
+            usage: msg?.usage,
+            cost: msg?.cost ?? event.cost,
+            duration: msg?.duration ?? event.duration,
           };
           set((s) => ({ messages: [...s.messages, finalized] }));
         }
@@ -337,6 +357,7 @@ export const useStore = create<StoreState>((set, get) => {
     toolCalls: [],
     notices: [],
     sessionTitle: null,
+    contextTokens: 0,
 
     setSelectedModel: (model) => {
       set({ selectedModel: model });

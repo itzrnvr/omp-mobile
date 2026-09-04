@@ -31,6 +31,7 @@ export type IconName =
   | "close"
   | "sync"
   | "ellipse"
+  | "folder"
   | "bulb"
   | "code"
   | "cloud-offline"
@@ -53,6 +54,7 @@ const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   close: "close",
   sync: "sync",
   ellipse: "ellipse-outline",
+  folder: "folder-outline",
   bulb: "bulb-outline",
   code: "code-slash",
   "cloud-offline": "cloud-offline-outline",

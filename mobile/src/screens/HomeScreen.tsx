@@ -66,7 +66,7 @@ export function HomeScreen() {
         </Stack>
       </Card>
 
-      <Button variant="filled" size="lg" fullWidth onPress={() => openChat()}>
+      <Button variant="light" size="lg" fullWidth onPress={() => openChat()}>
         New conversation
       </Button>
 
