@@ -17,9 +17,13 @@ export interface OmpContentBlock {
   toolName?: string;
   args?: unknown;
   content?: unknown;
+  /** tool_use block fields (JSONL shape). */
+  id?: string;
+  name?: string;
+  arguments?: unknown;
 }
 
-export type OmpMessageRole = 'user' | 'assistant' | 'system';
+export type OmpMessageRole = 'user' | 'assistant' | 'system' | 'toolResult' | 'developer';
 
 export interface OmpMessage {
   role: OmpMessageRole;
@@ -29,6 +33,10 @@ export interface OmpMessage {
   cost?: number;
   duration?: number;
   ttft?: number;
+  /** toolResult message fields (JSONL shape). */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
 }
 
 // ─── Session summary ──────────────────────────────────────────────────────────

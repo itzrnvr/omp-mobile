@@ -36,6 +36,8 @@ export const colors = {
   accentStrong: "#FFFFFF",
   accentDim: "#9b9b9b",
   sendIdle: "#969696",
+  /** Soft blue for interactive/tool titles (reference --blue). */
+  link: "#9ccafa",
 
   // Semantic
   success: "#4ADE80",

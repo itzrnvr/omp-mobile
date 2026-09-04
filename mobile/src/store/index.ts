@@ -169,6 +169,12 @@ export const useStore = create<StoreState>((set, get) => {
       }
       case 'message_end': {
         const msg = typeof event.message === 'string' ? undefined : event.message;
+        // Tool results are their own messages; keep them so the trace can pair
+        // results to tool_use blocks by toolCallId (live and from history).
+        if (msg?.role === 'toolResult') {
+          set((s) => ({ messages: [...s.messages, msg] }));
+          break;
+        }
         const isAssistant = msg?.role === 'assistant' ||
           (msg?.role === undefined && (get().streamingText.length > 0 || get().streamingThinking.length > 0));
         if (!isAssistant) break;
