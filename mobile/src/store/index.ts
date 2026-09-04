@@ -42,7 +42,6 @@ interface StoreState {
   serverStatus: ServerStatus | null;
   tunnelUrl: string | null;
   tunnelStatus: string | null;
-  setServerUrl: (url: string) => void;
   setToken: (token: string) => void;
   connect: () => void;
   disconnect: () => void;
@@ -293,10 +292,6 @@ export const useStore = create<StoreState>((set, get) => {
     tunnelUrl: null,
     tunnelStatus: null,
 
-    setServerUrl: (url) => {
-      set({ serverUrl: url });
-      AsyncStorage.setItem(KEY_URL, url).catch(() => {});
-    },
     setToken: (token) => {
       set({ token });
       AsyncStorage.setItem(KEY_TOKEN, token).catch(() => {});
@@ -469,29 +464,50 @@ export const useStore = create<StoreState>((set, get) => {
     // hydration
     hydrate: async () => {
       try {
-        const [url, token, model, thinking, cwd] = await Promise.all([
-          AsyncStorage.getItem(KEY_URL),
+        const [token, model, thinking, cwd] = await Promise.all([
           AsyncStorage.getItem(KEY_TOKEN),
           AsyncStorage.getItem(KEY_MODEL),
           AsyncStorage.getItem(KEY_THINKING),
           AsyncStorage.getItem(KEY_CWD),
         ]);
         set({
-          serverUrl: url ?? 'ws://localhost:9090',
           token: token ?? 'omp-mobile-personal-2026',
           selectedModel: model ?? null,
           thinkingLevel: (thinking as ThinkingLevel) ?? 'high',
           selectedCwd: cwd ?? null,
         });
-        // Auto-connect with loaded/defaults
-        get().connect();
       } catch {
-        set({
-          serverUrl: 'ws://localhost:9090',
-          token: 'omp-mobile-personal-2026',
-        });
-        get().connect();
+        set({ token: 'omp-mobile-personal-2026' });
       }
+      // Auto-connect via the persistent tunnel pointer (no manual URL entry).
+      void bootstrapConnect(0);
     },
   };
 });
+
+/** Fixed public pointer that always holds the current Cloudflare tunnel URL. */
+const BOOTSTRAP_URL =
+  'https://gist.githubusercontent.com/itzrnvr/b5167afad091916fc99263f1e45c7519/raw/omp-tunnel.json';
+const MAX_BOOTSTRAP_TRIES = 30;
+
+/** Fetch the tunnel URL from the bootstrap gist and connect; retry while the tunnel spins up. */
+async function bootstrapConnect(attempt: number): Promise<void> {
+  try {
+    const res = await fetch(BOOTSTRAP_URL, { cache: 'no-store' });
+    const data: unknown = await res.json();
+    let url: string | null = null;
+    if (data && typeof data === 'object' && 'url' in data && typeof data.url === 'string') {
+      url = data.url;
+    }
+    if (url && url.startsWith('http')) {
+      useStore.setState({ serverUrl: url });
+      useStore.getState().connect();
+      return;
+    }
+  } catch {
+    // Gist unreachable — retry below.
+  }
+  if (attempt < MAX_BOOTSTRAP_TRIES) {
+    setTimeout(() => void bootstrapConnect(attempt + 1), 8000);
+  }
+}

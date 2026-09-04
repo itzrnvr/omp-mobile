@@ -255,6 +255,8 @@ const server = Bun.serve({
         currentSessionId: null,
       });
       console.log(`[ws] client connected (${connections.size} total)`);
+      // Push status immediately so every client shows server + tunnel state on connect.
+      void buildStatus().then((status) => sendWs(ws, { type: "status", status }));
     },
 
     async message(ws: WebSocket, message: string | Buffer) {
@@ -313,3 +315,8 @@ console.log("╚═════════════════════�
 console.log("");
 console.log("Full auth token:", AUTH_TOKEN);
 console.log("Press Ctrl+C to stop");
+
+// Auto-start the Cloudflare tunnel so remote clients can bootstrap without manual entry.
+void startTunnel(PORT).then((state) => {
+  console.log(`[tunnel] auto-start: ${state.status}${state.url ? " " + state.url : ""}`);
+});

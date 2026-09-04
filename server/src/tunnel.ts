@@ -14,6 +14,9 @@
  */
 
 import type { Subprocess } from "bun";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type TunnelStatus = "stopped" | "starting" | "active" | "error";
 
@@ -25,6 +28,38 @@ export interface TunnelState {
 let tunnelProc: Subprocess<"pipe", "pipe", "pipe"> | null = null;
 let currentUrl: string | null = null;
 let currentStatus: TunnelStatus = "stopped";
+
+/** Gist that holds the current tunnel URL so clients can bootstrap without manual entry. */
+const GIST_ID = "b5167afad091916fc99263f1e45c7519";
+
+/** Resolve the cloudflared binary: bundled bin/ first, then PATH. */
+function resolveCloudflared(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const bundled = join(here, "..", "bin", "cloudflared.exe");
+  if (existsSync(bundled)) return bundled;
+  return "cloudflared";
+}
+
+/** Publish the current tunnel URL to the bootstrap gist (best-effort, fire-and-forget). */
+async function publishTunnelUrl(url: string): Promise<void> {
+  try {
+    const tokenProc = Bun.spawnSync(["gh", "auth", "token"]);
+    const token = new TextDecoder().decode(tokenProc.stdout).trim();
+    if (!token) return;
+    const content = JSON.stringify({ url, updated: Date.now() });
+    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ files: { "omp-tunnel.json": { content } } }),
+    });
+  } catch {
+    // Publishing is best-effort; the tunnel still works without it.
+  }
+}
 
 /**
  * Start a Cloudflare quick tunnel to the given localhost port.
@@ -38,7 +73,7 @@ export async function startTunnel(port: number): Promise<TunnelState> {
   currentUrl = null;
 
   tunnelProc = Bun.spawn(
-    ["cloudflared", "tunnel", "--url", `http://localhost:${port}`],
+    [resolveCloudflared(), "tunnel", "--url", `http://localhost:${port}`],
     {
       stdout: "pipe",
       stderr: "pipe",
@@ -67,6 +102,7 @@ export async function startTunnel(port: number): Promise<TunnelState> {
       if (urlMatch) {
         currentUrl = urlMatch[0];
         currentStatus = "active";
+        void publishTunnelUrl(currentUrl);
         reader.releaseLock();
         return { url: currentUrl, status: "active" };
       }

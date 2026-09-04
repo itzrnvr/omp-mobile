@@ -1,6 +1,12 @@
 /*
- * PURPOSE: Settings screen — configure server connection (URL + token).
- * Also shows connection status and quick-connect button.
+ * PURPOSE: Settings screen — read-only connection status + token.
+ *
+ * KEY DECISIONS:
+ * - No manual server-URL or tunnel-URL entry: the app auto-connects through the
+ *   persistent Cloudflare tunnel whose current URL is published to a fixed gist
+ *   pointer (see store bootstrapConnect). Users never type a URL.
+ * - Shows the resolved tunnel URL and live connection status for transparency.
+ * - Token is masked with a show/hide toggle (pre-filled, rarely edited).
  */
 
 import React, { useState } from "react";
@@ -8,100 +14,84 @@ import { View, StyleSheet, ScrollView, Pressable } from "react-native";
 import { colors, spacing, radii } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Stack } from "../components/ui/Stack";
 import { Badge } from "../components/ui/Badge";
+import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const {
-    serverUrl,
-    token,
-    wsStatus,
-    serverStatus,
-    setServerUrl,
-    setToken,
-    connect,
-    disconnect,
-  } = useStore();
-
-  const [urlInput, setUrlInput] = useState(serverUrl || "ws://localhost:9090");
-  const [tokenInput, setTokenInput] = useState(token || "omp-mobile-personal-2026");
-  const [tunnelUrlInput, setTunnelUrlInput] = useState("");
+  const { serverUrl, token, wsStatus, serverStatus, setToken } = useStore();
   const [showToken, setShowToken] = useState(false);
 
-  const handleConnect = () => {
-    setServerUrl(urlInput);
-    setToken(tokenInput);
-    connect();
-  };
-
-  const handleConnectTunnel = () => {
-    if (tunnelUrlInput.trim()) {
-      const wsUrl = tunnelUrlInput.trim().replace(/^http/, "ws");
-      setServerUrl(wsUrl);
-      setToken(tokenInput);
-      connect();
-    }
-  };
+  const connected = wsStatus === "connected";
+  const badgeColor = connected ? "success" : wsStatus === "connecting" ? "warning" : "error";
+  const badgeLabel = connected ? "Connected" : wsStatus === "connecting" ? "Connecting" : "Offline";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}>
-      <Card padding="lg">
-        <Stack gap="md">
-          <View style={styles.rowBetween}>
-            <Text size="lg" weight="semibold" color="text">Connection</Text>
-            <Badge
-              color={wsStatus === "connected" ? "success" : wsStatus === "connecting" ? "warning" : "error" as "success" | "warning" | "error"}
-              dot
-              size="md"
-            >
-              {wsStatus === "connected" ? "Connected" : wsStatus === "connecting" ? "Connecting..." : "Disconnected"}
-            </Badge>
-          </View>
-          {serverStatus && (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}
+    >
+      <Stack gap="md">
+        <Card>
+          <Stack gap="md">
+            <View style={styles.rowBetween}>
+              <Text size="lg" weight="semibold" color="text">Connection</Text>
+              <Badge color={badgeColor} dot>{badgeLabel}</Badge>
+            </View>
+
+            <View style={styles.rowBetween}>
+              <Text size="sm" color="textMuted">Tunnel</Text>
+              <Text size="sm" color="textSecondary" numberOfLines={1} style={styles.url}>
+                {serverUrl ? serverUrl.replace(/^wss?:\/\//, "") : "resolving…"}
+              </Text>
+            </View>
+
+            {serverStatus && (
+              <>
+                <View style={styles.rowBetween}>
+                  <Text size="sm" color="textMuted">OMP</Text>
+                  <Text size="sm" color="textSecondary">{serverStatus.ompVersion || "—"}</Text>
+                </View>
+                <View style={styles.rowBetween}>
+                  <Text size="sm" color="textMuted">Sessions</Text>
+                  <Text size="sm" color="textSecondary">{serverStatus.totalSessions ?? 0}</Text>
+                </View>
+              </>
+            )}
+          </Stack>
+        </Card>
+
+        <Card>
+          <Stack gap="sm">
+            <Text size="lg" weight="semibold" color="text">Auth Token</Text>
+            <View style={styles.tokenRow}>
+              <View style={styles.tokenInput}>
+                <Input
+                  value={token}
+                  onChangeText={setToken}
+                  secureTextEntry={!showToken}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              <Pressable
+                onPress={() => setShowToken((s) => !s)}
+                style={styles.eyeButton}
+                accessibilityLabel={showToken ? "Hide token" : "Show token"}
+              >
+                <Icon name={showToken ? "close" : "check"} size={16} color={colors.textMuted} />
+              </Pressable>
+            </View>
             <Text size="xs" color="textMuted">
-              OMP {serverStatus.ompVersion} · {serverStatus.totalSessions} sessions
+              Pre-filled for this personal install. Connection is automatic via the tunnel.
             </Text>
-          )}
-        </Stack>
-      </Card>
-
-      <Card padding="lg">
-        <Stack gap="md">
-          <Text size="md" weight="semibold" color="text">Local Network</Text>
-          <Text size="xs" color="textMuted">Connect to the bridge server on your local network</Text>
-          <Input label="Server URL" value={urlInput} onChangeText={setUrlInput} placeholder="ws://192.168.1.100:9090" />
-          <Input label="Auth Token" value={tokenInput} onChangeText={setTokenInput} placeholder="Paste the token from the bridge server" secureTextEntry={!showToken} />
-          {showToken && <Text size="xs" color="textMuted">{tokenInput}</Text>}
-          <Pressable onPress={() => setShowToken(!showToken)} style={{ alignSelf: "flex-end" }}>
-            <Text size="xs" color="textSecondary">{showToken ? "Hide" : "Show"} token</Text>
-          </Pressable>
-          <Button variant="filled" size="md" fullWidth onPress={handleConnect} disabled={wsStatus === "connected"}>{wsStatus === "connected" ? "Connected" : "Connect"}</Button>
-          {wsStatus === "connected" && (
-            <Button variant="outline" size="md" fullWidth onPress={disconnect}>Disconnect</Button>
-          )}
-        </Stack>
-      </Card>
-
-      <Card padding="lg">
-        <Stack gap="md">
-          <Text size="md" weight="semibold" color="text">Remote Tunnel</Text>
-          <Text size="xs" color="textMuted">Connect via Cloudflare Tunnel URL for access outside your network</Text>
-          <Input label="Tunnel URL" value={tunnelUrlInput} onChangeText={setTunnelUrlInput} placeholder="https://xxx-xxx.trycloudflare.com" />
-          <Button variant="light" size="md" fullWidth onPress={handleConnectTunnel}>Connect via Tunnel</Button>
-        </Stack>
-      </Card>
-
-      <Card padding="lg">
-        <Stack gap="sm">
-          <Text size="sm" weight="medium" color="text">How to get started</Text>
-          <Text size="xs" color="textMuted">{"1. Start the bridge server on your PC:\n   bun run D:/omp-mobile/server/src/index.ts\n\n2. Copy the auth token from the server output\n\n3. Enter the server URL and token above\n\n4. For remote access, start a tunnel from the Home screen"}</Text>
-        </Stack>
-      </Card>
+          </Stack>
+        </Card>
+      </Stack>
     </ScrollView>
   );
 }
@@ -110,4 +100,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  url: { flexShrink: 1, marginLeft: spacing.md },
+  tokenRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  tokenInput: { flex: 1 },
+  eyeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    backgroundColor: colors.bgSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

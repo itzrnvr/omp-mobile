@@ -9,7 +9,6 @@ import { colors, spacing, radii } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
 import { Stack } from "../components/ui/Stack";
 import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
@@ -19,7 +18,7 @@ import type { NavigationProp } from "../navigation";
 
 export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
   const insets = useSafeAreaInsets();
-  const { serverStatus, wsStatus, tunnelUrl, tunnelStatus, startTunnel, stopTunnel } = useStore();
+  const { serverStatus, wsStatus, tunnelUrl, tunnelStatus } = useStore();
 
   const statusColor = wsStatus === "connected" ? "success" : wsStatus === "connecting" ? "warning" : "error";
   const statusLabel = wsStatus === "connected" ? "Connected" : wsStatus === "connecting" ? "Connecting..." : "Disconnected";
@@ -42,36 +41,15 @@ export function HomeScreen({ navigation }: { navigation: NavigationProp }) {
               <InfoRow label="Active" value={String(serverStatus.activeSessions)} />
             </Stack>
           )}
-        </Stack>
-      </Card>
-
-      <Card padding="lg">
-        <Stack gap="md">
           <View style={styles.rowBetween}>
-            <Text size="lg" weight="semibold" color="text">Remote Tunnel</Text>
-            <Badge
-              color={tunnelStatus === "active" ? "success" : tunnelStatus === "starting" ? "warning" : "textMuted" as "success" | "warning" | "error"}
-              dot
-              size="md"
-            >
-              {tunnelStatus === "active" ? "Active" : tunnelStatus === "starting" ? "Starting..." : "Off"}
-            </Badge>
+            <Text size="sm" color="textMuted">Tunnel</Text>
+            <Text size="sm" color="textSecondary">
+              {tunnelStatus === "active" ? "Active" : tunnelStatus === "starting" ? "Starting…" : "Off"}
+            </Text>
           </View>
-          {tunnelUrl && (
-            <View style={styles.tunnelUrlBox}>
-              <Text size="xs" color="info" style={styles.tunnelUrl}>{tunnelUrl}</Text>
-            </View>
-          )}
-          <Button
-            variant={tunnelStatus === "active" ? "outline" : "filled"}
-            size="md"
-            fullWidth
-            loading={tunnelStatus === "starting"}
-            disabled={tunnelStatus === "starting"}
-            onPress={tunnelStatus === "active" ? stopTunnel : startTunnel}
-          >
-            {tunnelStatus === "active" ? "Stop Tunnel" : tunnelStatus === "starting" ? "Starting..." : "Start Tunnel"}
-          </Button>
+          {tunnelUrl ? (
+            <Text size="xs" color="textMuted" numberOfLines={1}>{tunnelUrl}</Text>
+          ) : null}
         </Stack>
       </Card>
 
