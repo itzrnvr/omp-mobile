@@ -13,26 +13,29 @@
  */
 
 export const colors = {
-  // Backgrounds (ChatGPT warm gray, not near-black)
-  bg: "#212121",
-  bgSecondary: "#181818",
-  surface: "#2F2F2F",
-  surfaceHover: "#383838",
-  surfaceActive: "#404040",
+  // Backgrounds (agent-mobile-ui reference palette)
+  bg: "#171717",
+  bgSecondary: "#1c1c1c",
+  surface: "#242424",
+  surfaceHover: "#2c2c2c",
+  surfaceActive: "#333333",
+  card: "#2d2d2d",
 
-  // Borders (subtle warm gray)
-  border: "#424242",
-  borderSubtle: "#383838",
+  // Borders (subtle)
+  border: "#3a3a3a",
+  borderSubtle: "#2a2a2a",
 
   // Text
-  text: "#ECECEC",
-  textSecondary: "#B4B4B4",
-  textMuted: "#8E8E8E",
+  text: "#f2f2f2",
+  textSecondary: "#b5b5b5",
+  textMuted: "#9b9b9b",
+  placeholder: "#606060",
 
   // Accent (minimal — ChatGPT uses almost no accent)
-  accent: "#ECECEC",
+  accent: "#f2f2f2",
   accentStrong: "#FFFFFF",
-  accentDim: "#8E8E8E",
+  accentDim: "#9b9b9b",
+  sendIdle: "#969696",
 
   // Semantic
   success: "#4ADE80",
@@ -41,11 +44,11 @@ export const colors = {
   info: "#B4B4B4",
 
   // Messages
-  userMessage: "#2F2F2F",
+  userMessage: "#242424",
   assistantMessage: "transparent",
 
   // Input
-  inputBg: "#2F2F2F",
+  inputBg: "#2d2d2d",
 
   // Status
   online: "#4ADE80",

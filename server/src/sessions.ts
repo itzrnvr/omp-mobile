@@ -63,58 +63,77 @@ function extractText(content: unknown): string {
 /**
  * Parse a JSONL session file to extract metadata and message count.
  */
+/** Header cache so repeat listings don't re-read every JSONL (600+ files). */
+const headerCache = new Map<string, { mtimeMs: number; size: number; header: SessionHeader }>();
+
+async function parseSessionFileCached(
+  filePath: string,
+  mtimeMs: number,
+  size: number,
+): Promise<SessionHeader | null> {
+  const hit = headerCache.get(filePath);
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.header;
+  const header = await parseSessionFile(filePath);
+  if (header) headerCache.set(filePath, { mtimeMs, size, header });
+  return header;
+}
+
+/**
+ * Parse a JSONL session file to extract metadata and message count.
+ *
+ * PERF: session ID/timestamp come from the filename (no parsing); the message
+ * count is a substring scan (no JSON.parse per line); the title parses only the
+ * first few lines and breaks early. Listing 600+ sessions must stay fast.
+ */
 async function parseSessionFile(filePath: string): Promise<SessionHeader | null> {
   try {
+    const filename = filePath.split(sep).pop() || "";
+
+    let sessionId = "";
+    const idMatch = filename.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+    if (idMatch) sessionId = idMatch[1];
+
+    let timestamp = "";
+    const tsMatch = filename.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+    if (tsMatch) timestamp = tsMatch[1];
+
     const text = await Bun.file(filePath).text();
     const lines = text.split("\n").filter((l) => l.trim());
     if (lines.length === 0) return null;
 
-    let title = "Untitled";
-    let sessionId = "";
-    let timestamp = "";
+    // Cheap message count: no JSON.parse per line.
     let messageCount = 0;
-    let firstUserText = "";
-
     for (const line of lines) {
+      if (line.includes('"type":"message"')) messageCount++;
+    }
+
+    // Title: parse only the head of the file, break as soon as we have one.
+    let title = "";
+    let firstUserText = "";
+    const head = lines.slice(0, 40);
+    for (const line of head) {
       try {
         const obj = JSON.parse(line);
-        if (obj.type === "title" && obj.title) {
+        if (obj.type === "title" && typeof obj.title === "string" && obj.title) {
           title = obj.title;
-        } else if (obj.type === "session" && obj.id) {
+          break;
+        }
+        if (obj.type === "session" && obj.id && !sessionId) {
           sessionId = obj.id;
-          timestamp = obj.timestamp || "";
-        } else if (obj.type === "message") {
-          messageCount++;
-          if (!firstUserText && obj.message?.role === "user") {
-            firstUserText = extractText(obj.message.content);
-          }
+          if (obj.timestamp) timestamp = obj.timestamp;
+        }
+        if (!firstUserText && obj.type === "message" && obj.message?.role === "user") {
+          firstUserText = extractText(obj.message.content);
         }
       } catch {
         // Skip non-JSON lines
       }
+      if (title && firstUserText) break;
     }
-
-    // Fall back to the first user message when OMP emitted no title event.
-    if (title === "Untitled" && firstUserText) {
-      title = firstUserText.length > 48 ? firstUserText.slice(0, 48) + "…" : firstUserText;
-    }
-
-    // Extract session ID from filename if not found in content
-    if (!sessionId) {
-      const filename = filePath.split(sep).pop() || "";
-      const match = filename.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
-      if (match) sessionId = match[1];
-    }
+    if (!title) title = firstUserText || "Untitled";
+    if (title.length > 48) title = title.slice(0, 48) + "…";
 
     if (!sessionId) return null;
-
-    // Extract timestamp from filename if not in content
-    if (!timestamp) {
-      const filename = filePath.split(sep).pop() || "";
-      const tsMatch = filename.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
-      if (tsMatch) timestamp = tsMatch[1];
-    }
-
     return { title, sessionId, timestamp, messageCount };
   } catch {
     return null;
@@ -152,13 +171,16 @@ export async function listSessions(): Promise<SessionSummary[]> {
     for (const file of files) {
       const filePath = join(dirPath, file);
       let size: number;
+      let mtimeMs: number;
       try {
-        size = statSync(filePath).size;
+        const st = statSync(filePath);
+        size = st.size;
+        mtimeMs = st.mtimeMs;
       } catch {
         continue;
       }
 
-      const header = await parseSessionFile(filePath);
+      const header = await parseSessionFileCached(filePath, mtimeMs, size);
       if (!header) continue;
 
       sessions.push({

@@ -10,6 +10,7 @@ import { colors, spacing, radii } from "../theme";
 import { MessageList } from "../components/chat/MessageList";
 import { ChatInput } from "../components/chat/ChatInput";
 import { Text } from "../components/ui/Text";
+import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MODEL_PRESETS, THINKING_LEVELS } from "../types";
@@ -79,13 +80,16 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     >
       {/* Header with model badge + chevron */}
       <View style={styles.header}>
-        <Pressable style={styles.modelBadge} onPress={() => setShowPicker(!showPicker)}>
-          <Text size="sm" weight="medium" color="accent">{modelLabel}</Text>
-          <Text size="xs" color="textMuted">{"  " + thinkingLevel + " \u25BE"}</Text>
+        <Text size="md" weight="medium" color="text" numberOfLines={1} style={styles.title}>
+          {sessionTitle || "New conversation"}
+        </Text>
+        <Pressable
+          style={styles.newChatButton}
+          onPress={() => startNewSession()}
+          accessibilityLabel="New conversation"
+        >
+          <Icon name="add" size={20} color={colors.textSecondary} />
         </Pressable>
-        {sessionTitle && (
-          <Text size="xs" color="textMuted" numberOfLines={1} style={styles.title}>{sessionTitle}</Text>
-        )}
       </View>
 
       {/* Compact popover model picker (ChatKit style) */}
@@ -159,8 +163,11 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onSend={handleSend}
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
-        placeholder={isGenerating ? "Generating..." : "Ask anything..."}
+        placeholder={isGenerating ? "Generating..." : "Ask for follow-up changes"}
         bottomInset={insets.bottom}
+        thinkingLabel={thinkingLevel}
+        modelLabel={modelLabel}
+        onOpenPicker={() => setShowPicker(true)}
       />
     </KeyboardAvoidingView>
   );
@@ -175,21 +182,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.bgSecondary,
+    borderBottomColor: colors.borderSubtle,
+    backgroundColor: colors.bg,
   },
-  // Model badge: pill with accent text + chevron
-  modelBadge: {
-    flexDirection: "row",
+  title: { flex: 1 },
+  newChatButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderWidth: 1,
-    borderColor: colors.border,
+    justifyContent: "center",
   },
-  title: { flex: 1, textAlign: "right" },
 
   // Popover overlay (tap to dismiss)
   pickerOverlay: {

@@ -36,7 +36,7 @@ export interface OmpMessage {
 export interface SessionSummary {
   id: string;
   title: string;
-  timestamp: number;
+  timestamp: string;
   cwd?: string;
   messageCount: number;
   size: number;

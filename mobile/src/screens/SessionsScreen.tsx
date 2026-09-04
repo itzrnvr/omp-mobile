@@ -1,11 +1,17 @@
 /*
- * PURPOSE: Sessions screen — list of past OMP conversations with search.
+ * PURPOSE: Sessions screen — list of past OMP conversations.
  * Tap a session to open it in the Chat screen.
+ *
+ * KEY DECISIONS:
+ * - Shows a loading state while the first list_sessions round-trip is in flight
+ *   (previously flashed "No sessions yet" while the server parsed 600+ files).
+ * - Timestamps from OMP session filenames encode time with dashes
+ *   (2026-05-07T11-42-14); formatDate restores colons before parsing.
  */
 
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, FlatList, Pressable, RefreshControl } from "react-native";
-import { colors, spacing, fontSizes, radii } from "../theme";
+import { colors, spacing } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -70,6 +76,17 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
     );
   }
 
+  if (loadingSessions && sessions.length === 0) {
+    return (
+      <View style={styles.empty}>
+        <Icon name="sync" size={28} color={colors.textMuted} />
+        <Text size="md" color="textMuted" style={{ marginTop: spacing.md }}>
+          Loading sessions…
+        </Text>
+      </View>
+    );
+  }
+
   if (sessions.length === 0) {
     return (
       <View style={styles.empty}>
@@ -95,9 +112,12 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   );
 }
 
-function formatDate(timestamp: number): string {
+function formatDate(timestamp: string): string {
   try {
-    const d = new Date(timestamp);
+    // OMP session filenames encode time with dashes (2026-05-07T11-42-14);
+    // restore colons so Date can parse it.
+    const normalized = timestamp.replace(/T(\d{2})-(\d{2})-(\d{2})/, "T$1:$2:$3");
+    const d = new Date(normalized);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   } catch {
     return String(timestamp);

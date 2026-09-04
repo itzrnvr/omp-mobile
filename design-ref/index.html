@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent — Mobile UI</title>
+<style>
+  :root {
+    --bg: #171717;
+    --bubble: #242424;
+    --card: #2d2d2d;
+    --text: #f2f2f2;
+    --gray: #9b9b9b;
+    --gray-dim: #8e8e8e;
+    --placeholder: #606060;
+    --blue: #9ccafa;
+    --blue-icon: #7cb6f0;
+    --send: #969696;
+    --sep: #2a2a2a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #0e0e0e;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--text);
+  }
+  button { font: inherit; }
+  .app {
+    max-width: 430px;
+    margin: 0 auto;
+    height: 100dvh;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .chat {
+    flex: 1;
+    min-height: 0;
+    padding: 12px 28px 24px;
+    font-size: 17px;
+    line-height: 1.52;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .chat::-webkit-scrollbar { display: none; }
+
+  /* ---- top bar ---- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px 4px;
+    background: rgba(23, 23, 23, .88);
+    backdrop-filter: blur(8px);
+    position: relative;
+    z-index: 20;
+  }
+  .topbar button {
+    background: none; border: 0; padding: 6px;
+    color: #a3a3a3; cursor: pointer; display: flex;
+    transition: color .15s ease;
+  }
+  .topbar button:hover { color: #d6d6d6; }
+  .topbar-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    color: #d6d4d0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- chat drawer (sidebar) ---- */
+  .drawer-backdrop {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0, 0, 0, .5);
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s ease;
+  }
+  .drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 51;
+    width: 300px; max-width: 82vw;
+    background: #1c1c1c;
+    border-right: 1px solid #2a2a2a;
+    display: flex; flex-direction: column;
+    padding: 14px 12px calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-103%);
+    visibility: hidden;
+    transition: transform .28s cubic-bezier(.32, .72, .25, 1), visibility .28s;
+  }
+  .drawer.show { transform: translateX(0); visibility: visible; }
+  .drawer-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 6px 12px;
+  }
+  .drawer-brand {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 17px; font-weight: 700; color: var(--text);
+  }
+  .drawer-brand svg { color: var(--blue-icon); }
+  .drawer-head button {
+    background: none; border: 0; padding: 6px;
+    color: #8e8e8e; cursor: pointer; display: flex;
+  }
+  .drawer-head button:hover { color: #d6d6d6; }
+  .drawer-new {
+    display: flex; align-items: center; gap: 8px;
+    background: #2a2a2a; border: 0; border-radius: 12px;
+    padding: 11px 14px; margin: 2px 2px 14px;
+    color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .drawer-new:hover { background: #333333; }
+  .drawer-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    color: #6f6f6f; padding: 0 8px 8px;
+  }
+  .drawer-list { flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .drawer-list::-webkit-scrollbar { display: none; }
+  .drawer-item {
+    display: flex; flex-direction: column; gap: 3px;
+    width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 2px; cursor: pointer;
+  }
+  .drawer-item:hover { background: #262626; }
+  .drawer-item.active { background: #2c2c2c; }
+  .drawer-item-title {
+    font-size: 14.5px; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .drawer-item-preview {
+    font-size: 12.5px; color: #8a8a8a;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .msg { color: var(--text); }
+
+  /* ---- tool call card (user request) ---- */
+  .user-card {
+    margin: 52px 0 0 auto;
+    max-width: 84%;
+    width: fit-content;
+    background: var(--bubble);
+    border-radius: 18px;
+    padding: 14px 18px 15px;
+  }
+  .user-card .title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--blue);
+    font-weight: 600;
+  }
+  .user-card .title svg { flex: none; }
+  .user-card p { margin-top: 3px; }
+
+  .collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s ease; }
+  .collapse.open { grid-template-rows: 1fr; }
+  .collapse > div { overflow: hidden; min-height: 0; visibility: hidden; transition: visibility .28s; }
+  .collapse.open > div { visibility: visible; }
+  .args-label { margin-top: 13px; font-size: 11px; letter-spacing: .09em; color: #6f6f6f; font-weight: 600; }
+  .args {
+    margin-top: 6px;
+    background: #1b1b1b;
+    border: 1px solid #2f2f2f;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: 12.5px/1.6 "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    color: #a8a8a8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    scrollbar-width: none;
+  }
+  .args::-webkit-scrollbar { display: none; }
+
+  /* ---- plain user message (sent from composer) ---- */
+  .user-msg {
+    margin: 26px 0 0 auto;
+    max-width: 84%;
+    width: fit-content;
+    background: var(--bubble);
+    border-radius: 18px;
+    padding: 12px 16px;
+  }
+
+  /* ---- reasoning / worked-for ---- */
+  .worked {
+    margin-top: 58px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: 0;
+    color: var(--gray);
+    cursor: pointer;
+    padding: 0;
+  }
+  .worked .chev { transition: transform .22s ease; display: flex; }
+  .worked.open .chev { transform: rotate(90deg); }
+  .worked:hover { color: #c4c4c4; }
+  .trace { margin-top: 14px; }
+  .trace-entry { position: relative; padding: 0 0 22px 36px; }
+  .trace-entry::before {
+    content: ''; position: absolute; left: 10px; top: 28px; bottom: 4px;
+    width: 2px; border-radius: 1px; background: #2c2c2c;
+  }
+  .trace-entry:last-child { padding-bottom: 2px; }
+  .trace-entry:last-child::before { display: none; }
+  .trace-node {
+    position: absolute; left: 0; top: 0;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #242424; border: 1px solid #3a3a3a;
+    display: flex; align-items: center; justify-content: center;
+    color: #8e8e8e;
+  }
+  .trace-label { font-size: 13px; font-weight: 600; color: #8e8e8e; margin-bottom: 4px; }
+  .trace-text { font-size: 14.5px; line-height: 1.5; color: #b5b5b5; }
+  .trace-tool {
+    display: flex; align-items: center; gap: 7px;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--blue); font-size: 14px; font-weight: 600;
+  }
+  .trace-tool:hover { color: #b3d8fc; }
+  .trace-tool .done { color: var(--blue-icon); display: flex; }
+  .trace-tool .chev { color: var(--blue-icon); display: flex; transition: transform .2s ease; }
+  .trace-tool.open .chev { transform: rotate(180deg); }
+
+  .sep { border: 0; border-top: 1px solid var(--sep); margin: 26px -28px 0; }
+  .cart-intro { margin-top: 16px; }
+  ul.cart { margin: 14px 0 0; padding-left: 30px; list-style: disc; }
+  ul.cart li { padding-left: 4px; margin-bottom: 12px; }
+  ul.cart li::marker { color: #b8b8b8; font-size: .8em; }
+  .subtotal { margin-top: 28px; }
+
+  /* ---- action row ---- */
+  .actions { margin-top: 18px; display: flex; align-items: center; gap: 14px; }
+  .actions button {
+    background: none; border: 0; padding: 0;
+    color: var(--gray-dim); cursor: pointer; display: flex;
+    transition: color .15s ease;
+  }
+  .actions button:hover { color: #c9c9c9; }
+  .actions button.on { color: var(--blue-icon); }
+
+  /* ---- live working states ---- */
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--blue-icon); flex: none;
+    animation: livePulse 1.1s ease-in-out infinite;
+  }
+  @keyframes livePulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  .tool-running { display: inline-flex; gap: 3px; margin-left: 2px; align-items: center; }
+  .tool-running span { width: 4px; height: 4px; border-radius: 50%; background: var(--blue-icon); animation: blink 1.1s infinite; }
+  .tool-running span:nth-child(2) { animation-delay: .15s; }
+  .tool-running span:nth-child(3) { animation-delay: .3s; }
+  .trace-entry { animation: traceIn .3s ease; }
+  @keyframes traceIn { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+  /* ---- composer ---- */
+  .composer {
+    position: sticky; bottom: 0;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bg);
+  }
+  .composer-card { background: var(--card); border-radius: 28px; padding: 19px 16px 13px; }
+  .composer input {
+    display: block; width: 100%;
+    background: none; border: 0; outline: 0;
+    color: var(--text); font: inherit; font-size: 18px;
+    padding: 2px 8px 26px;
+  }
+  .composer input::placeholder { color: var(--placeholder); }
+  .composer-row { display: flex; align-items: center; gap: 17px; padding: 0 4px; }
+  .composer-row > button, .composer-row .popover-anchor > button {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    display: flex; align-items: center; color: #a3a3a3;
+  }
+  .shield-group { gap: 5px; color: var(--blue-icon) !important; }
+  .spacer { flex: 1; }
+  .model { gap: 6px; color: #ececec !important; font-size: 17px; font-weight: 500; }
+  .model svg { color: #9a9a9a; }
+  .mic-btn { position: relative; }
+  .mic-btn.listening { color: var(--blue-icon) !important; }
+  .mic-btn.listening::after {
+    content: ''; position: absolute; inset: -6px; border-radius: 50%;
+    border: 2px solid rgba(124, 182, 240, .55);
+    animation: pulse 1.2s ease-out infinite;
+  }
+  @keyframes pulse { from { transform: scale(.75); opacity: 1; } to { transform: scale(1.45); opacity: 0; } }
+  .composer-row > button.send { width: 38px; height: 38px; border-radius: 50%; background: var(--send); color: #171717; justify-content: center; transition: background .18s ease; }
+  .composer-row > button.send.ready { background: #f2f2f2; }
+
+  /* ---- popovers ---- */
+  .popover-anchor { position: relative; }
+  .popover-backdrop { position: fixed; inset: 0; z-index: 25; }
+  .popover {
+    position: absolute; bottom: calc(100% + 14px); left: 0;
+    min-width: 232px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 14px;
+    padding: 6px;
+    z-index: 30;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .55);
+    transform-origin: bottom left;
+    animation: pop .16s ease;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(7px) scale(.97); } }
+  .popover .item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 10px 12px; border-radius: 9px;
+    background: none; border: 0; cursor: pointer;
+    color: var(--text); font-size: 15px; text-align: left;
+  }
+  .popover .item:hover { background: #3a3a3a; }
+  .popover .item .ic { color: var(--gray-dim); display: flex; flex: none; }
+  .popover .item .check { margin-left: auto; color: var(--blue-icon); display: flex; opacity: 0; }
+  .popover .item .check.on { opacity: 1; }
+
+  /* ---- model bottom sheet ---- */
+  .sheet-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(0, 0, 0, .55);
+    opacity: 0; pointer-events: none;
+    transition: opacity .24s ease;
+  }
+  .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; bottom: 0; left: 50%; z-index: 41;
+    width: 100%; max-width: 430px;
+    background: #242424;
+    border-radius: 22px 22px 0 0;
+    padding: 8px 14px calc(22px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 105%);
+    visibility: hidden;
+    transition: transform .3s cubic-bezier(.32, .72, .25, 1), visibility .3s;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, .45);
+  }
+  .sheet.show { transform: translate(-50%, 0); visibility: visible; }
+  .grabber { width: 36px; height: 4px; border-radius: 2px; background: #454545; margin: 4px auto 14px; }
+  .sheet-title { font-size: 13px; font-weight: 600; letter-spacing: .07em; color: #7c7c7c; padding: 0 12px 8px; }
+  .sheet-item {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 13px 12px; border-radius: 13px;
+    background: none; border: 0; cursor: pointer; text-align: left;
+  }
+  .sheet-item:hover { background: #2c2c2c; }
+  .sheet-name { font-size: 17px; font-weight: 600; color: var(--text); }
+  .sheet-desc { font-size: 13.5px; color: #8a8a8a; margin-top: 2px; }
+  .sheet-item .check { margin-left: auto; color: var(--blue-icon); display: flex; }
+</style>
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+/* ---------------- icons ---------------- */
+const Svg = ({ size = 24, sw = 1.7, children, ...rest }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" {...rest}>{children}</svg>
+);
+const Leaf      = p => <Svg {...p}><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></Svg>;
+const ChevDown  = p => <Svg {...p}><path d="m6 9 6 6 6-6"/></Svg>;
+const ChevRight = p => <Svg {...p}><path d="m9 18 6-6-6-6"/></Svg>;
+const Plus      = p => <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
+const Shield    = p => <Svg {...p}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9.2 12 2 2 3.6-3.8"/></Svg>;
+const Mic       = p => <Svg {...p}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></Svg>;
+const ArrowUp   = p => <Svg {...p}><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></Svg>;
+const Check     = p => <Svg {...p}><path d="M20 6 9 17l-5-5"/></Svg>;
+const Copy      = p => <Svg {...p}><rect width="13" height="13" x="8.5" y="8.5" rx="2.5"/><path d="M15.5 8.5V6a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"/></Svg>;
+const Fork      = p => <Svg {...p}><path d="M4 18c4.8 0 8.2-2.3 9.7-6"/><path d="m13.7 12 6.3-5.5"/><path d="M15.8 6.5H20v4.2"/><path d="m13.7 12 6.3 5.5"/><path d="M15.8 17.5H20v-4.2"/></Svg>;
+const Sparkle   = p => <Svg {...p}><path d="M12 3l1.9 5.3 5.3 1.9-5.3 1.9L12 17.2l-1.9-5.3L4.8 10l5.3-1.9L12 3z"/></Svg>;
+const Wrench    = p => <Svg {...p}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></Svg>;
+const MenuIcon  = p => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16"/></Svg>;
+const XIcon     = p => <Svg {...p}><path d="M18 6 6 18M6 6l12 12"/></Svg>;
+const Camera    = p => <Svg {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Svg>;
+const Paperclip = p => <Svg {...p}><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></Svg>;
+const LinkIcon  = p => <Svg {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></Svg>;
+
+/* ---------------- data ---------------- */
+const MODELS = [
+  { id: '5.5', desc: 'Most capable — best for agentic tasks' },
+  { id: '5',   desc: 'Fast — great for everyday requests' },
+  { id: '4.5', desc: 'Lightest — quickest replies' },
+];
+const SAFETY_MODES = ['Auto-run tools', 'Ask before running', 'Read-only mode'];
+const PLUS_ITEMS = [
+  { icon: Paperclip, label: 'Attach files' },
+  { icon: Camera,    label: 'Take a photo' },
+  { icon: LinkIcon,  label: 'Paste a link' },
+];
+const SEED_CHATS = [
+  { id: 'c1', title: 'On-device speech models', messages: [
+    { id: 1, role: 'assistant', kind: 'text',
+      text: 'Understood. Next time I\u2019ll use sensible defaults and skip the follow-up questions. I\u2019ll wait.' },
+    { id: 2, role: 'user', kind: 'tool',
+      tool: 'Run Deep Research',
+      args: 'compare the top 3 on-device speech-to-text models for a mobile app' },
+    { id: 3, role: 'assistant', kind: 'turn', status: 'done',
+      workedFor: '1m 35s',
+      trace: [
+        { type: 'reasoning', dur: '18s',
+          text: 'The user wants a practical comparison of the top three on-device speech-to-text models. Accuracy and speed on mobile hardware matter most, so I\u2019ll gather current benchmarks before writing anything.' },
+        { type: 'tool', tool: 'Web Search',
+          args: '{\n  "query": "on-device speech to text model benchmark accuracy rtf",\n  "max_sources": 10\n}',
+          result: '14 sources found \u00b7 6 selected' },
+        { type: 'reasoning', dur: '32s',
+          text: 'The benchmarks point to Whisper small, Moonshine base, and Vosk as the real contenders. Raw accuracy favors Whisper, but decode speed on mobile CPUs should decide the ranking \u2014 let me weigh both.' },
+        { type: 'tool', tool: 'Compile Report',
+          args: '{\n  "models": ["whisper-small", "moonshine-base", "vosk"],\n  "metrics": ["wer", "rtf", "size"],\n  "format": "comparison table"\n}',
+          result: 'Report drafted \u00b7 3 models compared' },
+        { type: 'reasoning', dur: '15s',
+          text: 'The comparison is solid and the numbers line up across sources. No file was requested, so I\u2019ll deliver the summary directly in chat.' },
+      ],
+      intro: 'Top 3 on-device speech-to-text models:',
+      items: [
+        'Whisper small \u2014 74 MB \u00b7 best accuracy \u00b7 WER 7.9%',
+        'Moonshine base \u2014 32 MB \u00b7 fastest decode \u00b7 5\u00d7 real-time',
+        'Vosk \u2014 49 MB \u00b7 streaming-first \u00b7 WER 11.2%',
+      ],
+      subtotal: 'Whisper small is the best default for accuracy; Moonshine wins for live transcription on slower phones. The full report is drafted in the workspace \u2014 no files were modified.' },
+  ]},
+  { id: 'c2', title: 'Refactor auth flow', messages: [
+    { id: 4, role: 'user', kind: 'text', text: 'our token refresh logic is flaky \u2014 any ideas?' },
+    { id: 5, role: 'assistant', kind: 'turn', status: 'done',
+      workedFor: '22s',
+      trace: [
+        { type: 'reasoning', dur: '6s',
+          text: 'Flaky refresh usually means a race. Let me look at how refresh and sign-out interact in the auth module before guessing.' },
+        { type: 'tool', tool: 'Search Codebase',
+          args: '{\n  "pattern": "refreshToken",\n  "glob": "src/auth/**"\n}',
+          result: '3 matches in auth/session.ts' },
+        { type: 'reasoning', dur: '10s',
+          text: 'Found it \u2014 the refresh timer isn\u2019t cleared on sign-out, so a stale timer can fire and resurrect a dead session. That explains the intermittency.' },
+      ],
+      intro: null, items: [],
+      subtotal: 'The refresh timer races with sign-out \u2014 it\u2019s never cleared, so a stale timer can resurrect a dead session. Debounce the refresh and clear timers on sign-out. Want me to patch it?' },
+  ]},
+  { id: 'c3', title: 'Weekend trip plan', messages: [
+    { id: 6, role: 'user', kind: 'text', text: 'plan a 2-day trip to Lisbon in October, budget-friendly' },
+    { id: 7, role: 'assistant', kind: 'turn', status: 'done',
+      workedFor: '31s',
+      trace: [
+        { type: 'reasoning', dur: '8s',
+          text: 'October is shoulder season \u2014 mild weather and lower prices. I\u2019ll check flights and neighborhoods before building the itinerary.' },
+        { type: 'tool', tool: 'Web Search',
+          args: '{\n  "query": "lisbon october budget travel flights hotels",\n  "max_sources": 8\n}',
+          result: '9 sources found \u00b7 4 used' },
+        { type: 'reasoning', dur: '12s',
+          text: 'Gra\u00e7a or Alfama for a central stay, and the airport is 15 minutes by metro. I have enough to sketch a 2-day plan with costs.' },
+      ],
+      intro: null, items: [],
+      subtotal: '2 days, ~\u20ac210 excluding flights: stay in Gra\u00e7a, day 1 for Alfama + S\u00e3o Jorge + the miradouros, day 2 for Bel\u00e9m + LX Factory. Trams and walking cover everything. Want a day-by-day version?' },
+  ]},
+  { id: 'c4', title: 'Debug flaky checkout test', messages: [
+    { id: 8, role: 'user', kind: 'text', text: 'checkout_test fails ~1 in 20 runs on CI but never locally' },
+    { id: 9, role: 'assistant', kind: 'text',
+      text: 'Classic CI-only flake \u2014 almost always timing. Check whether the test asserts against a network mock with a real timeout, and whether CI runs with a cold cache. Paste the failing step and I\u2019ll pinpoint it.' },
+  ]},
+];
+
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).catch(() => {}); return; }
+  const ta = document.createElement('textarea');
+  ta.value = t; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+/* ---------------- components ---------------- */
+function UserToolCard({ m }) {
+  return (
+    <div className="user-card">
+      <div className="title">
+        <Leaf size={18} sw={1.8}/>
+        {m.tool}
+      </div>
+      <p>{m.args}</p>
+    </div>
+  );
+}
+
+function ActionRow({ text }) {
+  const [copied, setCopied] = useState(false);
+  const doCopy = () => {
+    copyText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <div className="actions">
+      <button aria-label="Copy" onClick={doCopy} className={copied ? 'on' : ''}>
+        {copied ? <Check size={21} sw={1.9}/> : <Copy size={21} sw={1.6}/>}
+      </button>
+      <button aria-label="Fork"><Fork size={21} sw={1.6}/></button>
+    </div>
+  );
+}
+
+function TypeText({ text, live }) {
+  const [n, setN] = useState(live ? 0 : text.length);
+  useEffect(() => {
+    if (!live) { setN(text.length); return; }
+    let i = 0;
+    const id = setInterval(() => {
+      i += 3;
+      setN(Math.min(i, text.length));
+      if (i >= text.length) clearInterval(id);
+    }, 24);
+    return () => clearInterval(id);
+  }, [text, live]);
+  return <p className="trace-text">{text.slice(0, n)}</p>;
+}
+
+function TraceReasoning({ e, live }) {
+  return (
+    <div className="trace-entry">
+      <span className="trace-node"><Sparkle size={11} sw={2}/></span>
+      <div className="trace-label">Reasoning{e.dur ? ' \u00b7 ' + e.dur : ''}</div>
+      <TypeText text={e.text} live={live}/>
+    </div>
+  );
+}
+
+function TraceTool({ e }) {
+  const [open, setOpen] = useState(false);
+  const done = !e.status || e.status === 'done';
+  return (
+    <div className="trace-entry">
+      <span className="trace-node"><Wrench size={11} sw={2}/></span>
+      <button className={'trace-tool' + (open ? ' open' : '')} onClick={() => setOpen(!open)}>
+        {e.tool}
+        {done
+          ? <Check size={13} sw={2.4} className="done"/>
+          : <span className="tool-running"><span/><span/><span/></span>}
+        <ChevDown size={13} sw={2.2} className="chev"/>
+      </button>
+      <div className={'collapse' + (open ? ' open' : '')}>
+        <div>
+          <div className="args-label">ARGUMENTS</div>
+          <pre className="args">{e.args}</pre>
+          {e.result && <div className="args-label">RESULT</div>}
+          {e.result && <pre className="args">{e.result}</pre>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Trace({ steps, live }) {
+  return (
+    <div className="trace">
+      {steps.map((e, i) => e.type === 'tool'
+        ? <TraceTool e={e} key={i}/>
+        : <TraceReasoning e={e} live={live} key={i}/>)}
+    </div>
+  );
+}
+
+function AgentTurn({ m }) {
+  const working = m.status === 'working';
+  const [open, setOpen] = useState(working);
+  const [secs, setSecs] = useState(0);
+  useEffect(() => { if (m.status === 'done') setOpen(false); }, [m.status]);
+  useEffect(() => {
+    if (!working) return;
+    const id = setInterval(() => setSecs(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [working]);
+  const plain = [m.intro, ...(m.items || []), m.subtotal].filter(Boolean).join('\n');
+  return (
+    <div>
+      <button className={'worked' + (open ? ' open' : '')} onClick={() => setOpen(!open)}>
+        {working && <span className="live-dot"/>}
+        {working ? 'Working \u00b7 ' + secs + 's' : 'Worked for ' + m.workedFor}
+        <span className="chev"><ChevRight size={16} sw={2}/></span>
+      </button>
+      <div className={'collapse' + (open ? ' open' : '')}>
+        <div>
+          <Trace steps={m.trace} live={working}/>
+        </div>
+      </div>
+      {m.intro && <hr className="sep"/>}
+      {m.intro && <p className="cart-intro">{m.intro}</p>}
+      {m.items && m.items.length > 0 && (
+        <ul className="cart">
+          {m.items.map((it, i) => <li key={i}>{it}</li>)}
+        </ul>
+      )}
+      {m.subtotal && <p className="msg subtotal" style={!m.intro ? { marginTop: 14 } : null}>{m.subtotal}</p>}
+      {m.subtotal && <ActionRow text={plain}/>}
+    </div>
+  );
+}
+
+function Popover({ items, selected, onPick }) {
+  return (
+    <div className="popover">
+      {items.map(it => (
+        <button className="item" key={it.label} onClick={() => onPick(it.label)}>
+          {it.icon && <span className="ic"><it.icon size={19} sw={1.7}/></span>}
+          {it.label}
+          <span className={'check' + (selected === it.label ? ' on' : '')}><Check size={17} sw={2.2}/></span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function chatPreview(c) {
+  const last = c.messages[c.messages.length - 1];
+  if (!last) return 'No messages yet';
+  if (last.kind === 'tool') return last.args;
+  const t = last.subtotal || last.text || (last.workedFor ? 'Worked for ' + last.workedFor : '');
+  return t.length > 52 ? t.slice(0, 52) + '\u2026' : t;
+}
+
+/* ---------------- app ---------------- */
+function App() {
+  const [chats, setChats] = useState(SEED_CHATS);
+  const [activeId, setActiveId] = useState(SEED_CHATS[0].id);
+  const [input, setInput] = useState('');
+  const [model, setModel] = useState('5.5');
+  const [safety, setSafety] = useState('Ask before running');
+  const [panel, setPanel] = useState(null);   // 'plus' | 'shield' | null
+  const [sheet, setSheet] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [listening, setListening] = useState(false);
+  const chatRef = useRef(null);
+  const idRef = useRef(100);
+  const nextId = () => ++idRef.current;
+  const activeChat = chats.find(c => c.id === activeId);
+  const messages = activeChat.messages;
+
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    const last = messages[messages.length - 1];
+    if (last && last.status === 'working') {
+      const id = setInterval(() => { el.scrollTop = el.scrollHeight; }, 250);
+      return () => clearInterval(id);
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') { setPanel(null); setSheet(false); setDrawer(false); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const newChat = () => {
+    const c = { id: 'c' + nextId(), title: 'New chat', messages: [] };
+    setChats(cs => [c, ...cs]);
+    setActiveId(c.id);
+    setDrawer(false);
+  };
+
+  const send = () => {
+    const t = input.trim();
+    if (!t) return;
+    setInput('');
+    const uid = nextId(), tid = nextId();
+    const cid = activeId;
+    const patchChat = fn => setChats(cs => cs.map(c => c.id === cid ? fn(c) : c));
+    patchChat(c => ({
+      ...c,
+      title: c.title === 'New chat' ? (t.length > 36 ? t.slice(0, 36) + '\u2026' : t) : c.title,
+      messages: [...c.messages,
+        { id: uid, role: 'user', kind: 'text', text: t },
+        { id: tid, role: 'assistant', kind: 'turn', status: 'working',
+          workedFor: null, trace: [], intro: null, items: [], subtotal: null }],
+    }));
+    const updateTurn = fn => setChats(cs => cs.map(c => c.id !== cid ? c : {
+      ...c, messages: c.messages.map(m => m.id === tid ? fn(m) : m) }));
+    const start = Date.now();
+    setTimeout(() => updateTurn(m => ({ ...m, trace: [...m.trace,
+      { type: 'reasoning', text: 'Reading your request and planning the steps.' }] })), 200);
+    setTimeout(() => updateTurn(m => ({ ...m, trace: [...m.trace,
+      { type: 'tool', tool: 'Web Search', status: 'running',
+        args: '{\n  "query": ' + JSON.stringify(t) + ',\n  "max_sources": 8\n}' }] })), 2100);
+    setTimeout(() => updateTurn(m => ({ ...m, trace: m.trace.map(e =>
+      e.type === 'tool' && e.status === 'running' ? { ...e, status: 'done', result: '5 sources found \u00b7 2 relevant' } : e) })), 3300);
+    setTimeout(() => updateTurn(m => ({ ...m, trace: [...m.trace,
+      { type: 'reasoning', text: 'The results cover the request well. Summarizing for the user.' }] })), 3500);
+    setTimeout(() => updateTurn(m => ({ ...m, status: 'done',
+      workedFor: Math.max(1, Math.round((Date.now() - start) / 1000)) + 's',
+      subtotal: 'Here\u2019s a quick summary of what I found. Want me to go deeper on any part?' })), 4900);
+  };
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <button aria-label="Open menu" onClick={() => setDrawer(true)}>
+          <MenuIcon size={22} sw={1.8}/>
+        </button>
+        <div className="topbar-title">{activeChat.title}</div>
+        <button aria-label="New chat" onClick={newChat}>
+          <Plus size={22} sw={1.8}/>
+        </button>
+      </header>
+      <main className="chat" ref={chatRef}>
+        {messages.map(m => {
+          if (m.kind === 'text' && m.role === 'user') return <div className="user-msg" key={m.id}>{m.text}</div>;
+          if (m.kind === 'tool')  return <UserToolCard m={m} key={m.id}/>;
+          if (m.kind === 'turn')  return <AgentTurn m={m} key={m.id}/>;
+          return <p className="msg" key={m.id}>{m.text}</p>;
+        })}
+      </main>
+
+      <footer className="composer">
+        <div className="composer-card">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') send(); }}
+            placeholder="Ask for follow-up changes"
+          />
+          <div className="composer-row">
+            <div className="popover-anchor">
+              <button aria-label="Add" onClick={() => setPanel(panel === 'plus' ? null : 'plus')}>
+                <Plus size={24} sw={1.7}/>
+              </button>
+              {panel === 'plus' && <Popover items={PLUS_ITEMS} selected={null} onPick={() => setPanel(null)}/>}
+            </div>
+            <div className="popover-anchor">
+              <button className="shield-group" aria-label="Safety options" onClick={() => setPanel(panel === 'shield' ? null : 'shield')}>
+                <Shield size={22} sw={1.7}/>
+                <ChevDown size={13} sw={2.4}/>
+              </button>
+              {panel === 'shield' && (
+                <Popover
+                  items={SAFETY_MODES.map(label => ({ label }))}
+                  selected={safety}
+                  onPick={label => { setSafety(label); setPanel(null); }}
+                />
+              )}
+            </div>
+            <span className="spacer"/>
+            <button className="model" onClick={() => setSheet(true)}>
+              {model}
+              <ChevDown size={15} sw={2.2}/>
+            </button>
+            <button className={'mic-btn' + (listening ? ' listening' : '')} aria-label="Voice input" onClick={() => setListening(!listening)}>
+              <Mic size={22} sw={1.7}/>
+            </button>
+            <button className={'send' + (input.trim() ? ' ready' : '')} aria-label="Send" onClick={send}>
+              <ArrowUp size={20} sw={2.1}/>
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      {panel && <div className="popover-backdrop" onClick={() => setPanel(null)}/>}
+
+      <div className={'drawer-backdrop' + (drawer ? ' show' : '')} onClick={() => setDrawer(false)}/>
+      <aside className={'drawer' + (drawer ? ' show' : '')}>
+        <div className="drawer-head">
+          <span className="drawer-brand"><Sparkle size={16} sw={2}/> Agent</span>
+          <button aria-label="Close menu" onClick={() => setDrawer(false)}><XIcon size={20} sw={1.8}/></button>
+        </div>
+        <button className="drawer-new" onClick={newChat}>
+          <Plus size={18} sw={2}/> New chat
+        </button>
+        <div className="drawer-label">RECENTS</div>
+        <div className="drawer-list">
+          {chats.map(c => (
+            <button
+              key={c.id}
+              className={'drawer-item' + (c.id === activeId ? ' active' : '')}
+              onClick={() => { setActiveId(c.id); setDrawer(false); }}
+            >
+              <span className="drawer-item-title">{c.title}</span>
+              <span className="drawer-item-preview">{chatPreview(c)}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className={'sheet-backdrop' + (sheet ? ' show' : '')} onClick={() => setSheet(false)}/>
+      <div className={'sheet' + (sheet ? ' show' : '')}>
+        <div className="grabber"/>
+        <div className="sheet-title">MODEL</div>
+        {MODELS.map(m => (
+          <button className="sheet-item" key={m.id} onClick={() => { setModel(m.id); setSheet(false); }}>
+            <div>
+              <div className="sheet-name">{m.id}</div>
+              <div className="sheet-desc">{m.desc}</div>
+            </div>
+            {model === m.id && <span className="check"><Check size={20} sw={2.2}/></span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
