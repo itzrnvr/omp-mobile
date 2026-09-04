@@ -136,6 +136,8 @@ export type WsClientCommand =
   | { type: 'list_sessions' }
   | { type: 'get_history'; sessionId: string }
   | { type: 'get_status' }
+  | { type: 'fork_session'; sessionId: string; messageCount: number }
+  | { type: 'delete_session'; sessionId: string }
   | { type: 'cancel' }
   | { type: 'start_tunnel' }
   | { type: 'stop_tunnel' };
@@ -147,7 +149,9 @@ export type WsServerMessage =
   | { type: 'sessions'; sessions: SessionSummary[] }
   | { type: 'history'; sessionId: string; messages: OmpMessage[]; title?: string }
   | { type: 'status'; status: ServerStatus }
-  | { type: 'tunnel'; url: string | null; status: string };
+  | { type: 'tunnel'; url: string | null; status: string }
+  | { type: 'forked'; sessionId: string; sessions: SessionSummary[] }
+  | { type: 'deleted'; sessionId: string; sessions: SessionSummary[] };
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 

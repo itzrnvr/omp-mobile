@@ -11,10 +11,11 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, FlatList, Pressable, RefreshControl } from "react-native";
+import { View, StyleSheet, FlatList, Pressable, RefreshControl, Alert } from "react-native";
 import { colors, spacing } from "../theme";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
+import { Input } from "../components/ui/Input";
 import { useStore } from "../store";
 import { openChat } from "../navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,7 +25,18 @@ import type { NavigationProp } from "../navigation";
 export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   const insets = useSafeAreaInsets();
   const { sessions, refreshSessions, wsStatus, loadingSessions } = useStore();
+  const { deleteSession } = useStore();
+  const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? sessions.filter(
+        (s) =>
+          (s.title || "").toLowerCase().includes(q) ||
+          (s.cwd || "").toLowerCase().includes(q),
+      )
+    : sessions;
 
   useEffect(() => {
     refreshSessions();
@@ -37,7 +49,16 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   const renderItem = ({ item }: { item: SessionSummary }) => (
-    <Pressable onPress={() => openChat(item.id)} style={styles.sessionRow}>
+    <Pressable
+      onPress={() => openChat(item.id)}
+      onLongPress={() =>
+        Alert.alert("Delete session?", item.title || "Untitled", [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => deleteSession(item.id) },
+        ])
+      }
+      style={styles.sessionRow}
+    >
       <View style={styles.rowMain}>
         <Text size="md" weight="medium" color="text" numberOfLines={1}>
           {item.title || "Untitled"}
@@ -85,7 +106,21 @@ export function SessionsScreen({ navigation }: { navigation: NavigationProp }) {
 
   return (
     <FlatList
-      data={sessions}
+      data={filtered}
+      ListHeaderComponent={
+        <View style={styles.searchWrap}>
+          <Icon name="search" size={15} color={colors.textMuted} />
+          <View style={styles.searchInput}>
+            <Input
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search sessions"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+      }
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
       style={{ backgroundColor: colors.bg }}
@@ -108,6 +143,17 @@ function formatDate(timestamp: string): string {
 }
 
 const styles = StyleSheet.create({
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 2,
+    marginBottom: spacing.sm,
+  },
+  searchInput: { flex: 1 },
   list: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 100,

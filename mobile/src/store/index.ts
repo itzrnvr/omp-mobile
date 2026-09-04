@@ -26,6 +26,8 @@ const KEY_THINKING = 'omp.thinking';
 const KEY_CWD = 'omp.cwd';
 
 let wsService: WebSocketService | null = null;
+/** Resolves the pending forkSession() promise when the server replies 'forked'. */
+let forkResolver: ((sessionId: string | null) => void) | null = null;
 
 interface SendMessageOpts {
   model?: string;
@@ -76,6 +78,9 @@ interface StoreState {
   sessions: SessionSummary[];
   loadingSessions: boolean;
   refreshSessions: () => void;
+  deleteSession: (sessionId: string) => void;
+  /** Fork a session up to messageCount messages; resolves with the new session id. */
+  forkSession: (sessionId: string, messageCount: number) => Promise<string | null>;
 
   // hydration
   hydrate: () => Promise<void>;
@@ -457,6 +462,16 @@ export const useStore = create<StoreState>((set, get) => {
         case 'sessions':
           set({ sessions: msg.sessions, loadingSessions: false });
           break;
+        case 'forked': {
+          set({ sessions: msg.sessions });
+          const r = forkResolver;
+          forkResolver = null;
+          if (r) r(msg.sessionId);
+          break;
+        }
+        case 'deleted':
+          set({ sessions: msg.sessions, loadingSessions: false });
+          break;
         case 'history':
           set({
             currentSessionId: msg.sessionId,
@@ -487,6 +502,22 @@ export const useStore = create<StoreState>((set, get) => {
       set({ loadingSessions: true });
       wsService?.send({ type: 'list_sessions' });
     },
+
+    deleteSession: (sessionId) => {
+      wsService?.send({ type: 'delete_session', sessionId });
+    },
+
+    forkSession: (sessionId, messageCount) =>
+      new Promise<string | null>((resolve) => {
+        forkResolver = resolve;
+        wsService?.send({ type: 'fork_session', sessionId, messageCount });
+        setTimeout(() => {
+          if (forkResolver === resolve) {
+            forkResolver = null;
+            resolve(null);
+          }
+        }, 15000);
+      }),
 
     // hydration
     hydrate: async () => {

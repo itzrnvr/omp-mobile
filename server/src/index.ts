@@ -18,6 +18,7 @@
 
 import { spawnOmp, getOmpVersion } from "./omp.ts";
 import { listSessions, getSessionHistory } from "./sessions.ts";
+import { deleteSession, forkSession } from "./sessions.ts";
 import { startTunnel, stopTunnel, getTunnelState } from "./tunnel.ts";
 import type {
   WsClientCommand,
@@ -157,6 +158,29 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
     case "get_status": {
       const status = await buildStatus();
       sendWs(ws, { type: "status", status });
+      break;
+    }
+
+    case "start_tunnel":
+    case "fork_session": {
+      const newId = forkSession(cmd.sessionId, cmd.messageCount);
+      if (newId) {
+        const sessions = await listSessions();
+        sendWs(ws, { type: "forked", sessionId: newId, sessions });
+      } else {
+        sendWs(ws, { type: "error", message: `Fork failed: ${cmd.sessionId}` });
+      }
+      break;
+    }
+
+    case "delete_session": {
+      const ok = deleteSession(cmd.sessionId);
+      const sessions = await listSessions();
+      if (ok) {
+        sendWs(ws, { type: "deleted", sessionId: cmd.sessionId, sessions });
+      } else {
+        sendWs(ws, { type: "error", message: `Delete failed: ${cmd.sessionId}` });
+      }
       break;
     }
 

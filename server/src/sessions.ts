@@ -17,6 +17,9 @@
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { readdirSync, statSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import type { SessionSummary, OmpMessage } from "./types.ts";
 
@@ -195,9 +198,14 @@ export async function listSessions(): Promise<SessionSummary[]> {
   }
 
   sessions.sort((a, b) => {
-    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-    return tb - ta;
+    const parseTs = (ts: string): number => {
+      // Filenames encode time with dashes (2026-05-07T11-42-14); restore colons
+      // or Date parses to NaN and the sort order becomes arbitrary.
+      const normalized = ts.replace(/T(\d{2})-(\d{2})-(\d{2})/, "T$1:$2:$3");
+      const t = new Date(normalized).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    return parseTs(b.timestamp) - parseTs(a.timestamp);
   });
 
   return sessions;
@@ -266,6 +274,88 @@ export async function getSessionHistory(
     }
 
     return { messages, title };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete a session: removes its JSONL plus any advisor sidecar files.
+ */
+export function deleteSession(sessionId: string): boolean {
+  try {
+    const filePath = findSessionFileSync(sessionId);
+    if (!filePath) return false;
+    const dir = filePath.split(sep).slice(0, -1).join(sep);
+    for (const f of readdirSync(dir)) {
+      if (f.includes(sessionId)) {
+        try {
+          unlinkSync(join(dir, f));
+        } catch {
+          // best effort
+        }
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Sync variant of findSessionFile for delete/fork paths. */
+function findSessionFileSync(sessionId: string): string | null {
+  try {
+    for (const dir of readdirSync(SESSIONS_DIR, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue;
+      const dirPath = join(SESSIONS_DIR, dir.name);
+      for (const f of readdirSync(dirPath)) {
+        if (f.endsWith(".jsonl") && f.includes(sessionId) && !f.includes("__advisor")) {
+          return join(dirPath, f);
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fork a session: copy the header + first `messageCount` message lines into a
+ * new session file (new id/timestamp) in the same cwd directory.
+ * Returns the new session id, or null on failure.
+ */
+export function forkSession(sessionId: string, messageCount: number): string | null {
+  try {
+    const filePath = findSessionFileSync(sessionId);
+    if (!filePath) return null;
+    const lines = readFileSync(filePath, "utf-8").split("\n").filter((l) => l.trim());
+    const newId = randomUUID();
+    const out: string[] = [];
+    let messages = 0;
+    for (const line of lines) {
+      let rewritten = line;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "session" && obj.id) {
+          obj.id = newId;
+          obj.timestamp = new Date().toISOString();
+          rewritten = JSON.stringify(obj);
+        } else if (obj.type === "message") {
+          messages++;
+          if (messages > messageCount) break;
+        }
+      } catch {
+        // keep non-JSON lines as-is
+      }
+      out.push(rewritten);
+    }
+    if (messages === 0) return null;
+    const dir = filePath.split(sep).slice(0, -1).join(sep);
+    const stamp = new Date().toISOString().replace(/[:.]/g, (c) => (c === ":" ? "-" : c));
+    const newName = `${stamp}\u2080${newId}.jsonl`;
+    writeFileSync(join(dir, newName), out.join("\n") + "\n", "utf-8");
+    return newId;
   } catch {
     return null;
   }

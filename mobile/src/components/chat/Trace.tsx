@@ -1,39 +1,40 @@
 /*
- * PURPOSE: Collapsible turn trace — the reference design's "Worked for 1m 35s ›"
- * pattern: one summary row that expands into a vertical rail of steps
- * (reasoning + tool calls with args/result boxes).
+ * PURPOSE: The "working / worked-for" chain-of-thought component.
  *
- * KEY DECISIONS:
- * - Rail: 2px line (#2c2c2c) connecting 22px circular nodes (#242424 bg,
- *   #3a3a3a border) with a tiny glyph per step kind.
- * - Reasoning step: muted "Reasoning" label + secondary text.
- * - Tool step: title in colors.link (soft blue); tap toggles args + result
- *   boxes (mono, #1b1b1b bg, #2f2f2f border, 10px radius). Errors use colors.error.
- * - Auto-expands while streaming, collapses when the turn completes.
+ * SPEC (from user):
+ * - One component per assistant turn with TWO text states:
+ *     * "Working…" while the model is producing reasoning + tool calls.
+ *     * "Worked for Xs" once the final response is produced; it then COLLAPSES.
+ * - Expanded content is the CoT flow in order:
+ *     Reasoning -> Tool call -> Reasoning -> Tool call -> ... -> (final answer
+ *     rendered OUTSIDE this component, below it).
+ * - Reasoning renders R1-style: muted secondary text, no box.
+ * - Tool calls are NOT expandable cards: a blue tool-name line plus a capped,
+ *   muted mono result line inline (the user picks a tool and sends a prompt;
+ *   the call happens inside the working group).
+ * - Visual language from the reference: 2px rail (#2c2c2c) connecting 22px
+ *   circular nodes (#242424 bg, #3a3a3a border).
  */
 
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView } from "react-native";
-import { colors, spacing, radii } from "../../theme";
-import { Text } from "../ui/Text";
+import { View, StyleSheet, Pressable, Text as RNText } from "react-native";
+import { colors, spacing } from "../../theme";
 import { Icon } from "../ui/Icon";
 
 export interface TraceStep {
   kind: "reasoning" | "tool";
-  /** Reasoning text. */
+  /** Reasoning text (R1-style). */
   text?: string;
   /** Tool name. */
   name?: string;
-  /** Serialized tool arguments. */
-  args?: string;
-  /** Tool result text. */
+  /** Tool result text (shown capped, inline). */
   result?: string;
   isError?: boolean;
 }
 
 export interface TraceProps {
   steps: TraceStep[];
-  /** Turn duration in ms (from the final assistant message). */
+  /** Turn duration in ms (final assistant message). */
   durationMs?: number;
   isStreaming?: boolean;
 }
@@ -45,33 +46,37 @@ function formatDuration(ms: number): string {
 }
 
 export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
+  // Expanded while working; collapses automatically when the turn completes.
   const [expanded, setExpanded] = useState(!!isStreaming);
-  const [openTools, setOpenTools] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setExpanded(!!isStreaming);
   }, [isStreaming]);
 
-  if (steps.length === 0) return null;
+  if (steps.length === 0 && !isStreaming) return null;
 
   return (
     <View style={styles.wrap}>
       <Pressable
         style={styles.header}
         onPress={() => setExpanded((e) => !e)}
-        accessibilityLabel={expanded ? "Collapse trace" : "Expand trace"}
+        accessibilityLabel={expanded ? "Collapse chain of thought" : "Expand chain of thought"}
       >
         {isStreaming ? (
           <>
             <Icon name="sync" size={14} color={colors.textMuted} />
-            <Text size="sm" color="textMuted">Working…</Text>
+            <RNText style={styles.headerText}>Working…</RNText>
           </>
         ) : (
           <>
-            <Text size="sm" color="textMuted">
-              Worked for {durationMs ? formatDuration(durationMs) : formatDuration(0)}
-            </Text>
-            <Icon name={expanded ? "chevron-up" : "chevron-forward"} size={13} color={colors.textMuted} />
+            <RNText style={styles.headerText}>
+              Worked for {formatDuration(durationMs || 0)}
+            </RNText>
+            <Icon
+              name={expanded ? "chevron-up" : "chevron-forward"}
+              size={13}
+              color={colors.textMuted}
+            />
           </>
         )}
       </Pressable>
@@ -80,7 +85,6 @@ export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
         <View style={styles.railWrap}>
           {steps.map((step, i) => {
             const last = i === steps.length - 1;
-            const toolOpen = !!openTools[i];
             return (
               <View key={i} style={styles.stepRow}>
                 <View style={styles.nodeCol}>
@@ -95,60 +99,38 @@ export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
                 </View>
                 <View style={[styles.stepBody, last && styles.stepBodyLast]}>
                   {step.kind === "reasoning" ? (
-                    <>
-                      <Text size="xs" color="textMuted">Reasoning</Text>
-                      <Text size="sm" color="textSecondary" style={styles.stepText}>
-                        {step.text}
-                      </Text>
-                    </>
+                    <RNText style={styles.reasoningText}>{step.text}</RNText>
                   ) : (
-                    <>
-                      <Pressable
-                        style={styles.toolTitleRow}
-                        onPress={() => setOpenTools((m) => ({ ...m, [i]: !m[i] }))}
+                    <View>
+                      <RNText
+                        style={[styles.toolName, step.isError && styles.toolNameError]}
+                        numberOfLines={1}
                       >
-                        <Text
-                          size="sm"
-                          weight="medium"
-                          color={step.isError ? "error" : "text"}
-                          style={styles.toolTitle}
-                        >
-                          {step.name || "tool"}
-                        </Text>
-                        <Icon
-                          name={toolOpen ? "chevron-up" : "chevron-down"}
-                          size={12}
-                          color={colors.link}
-                        />
-                      </Pressable>
-                      {toolOpen && (
-                        <>
-                          {step.args ? (
-                            <View style={styles.box}>
-                              <ScrollView style={styles.boxScroll} nestedScrollEnabled>
-                                <Text size="xs" color="textMuted" style={styles.mono}>
-                                  {step.args}
-                                </Text>
-                              </ScrollView>
-                            </View>
-                          ) : null}
-                          {step.result ? (
-                            <View style={styles.box}>
-                              <ScrollView style={styles.boxScroll} nestedScrollEnabled>
-                                <Text size="xs" color="textSecondary" style={styles.mono}>
-                                  {step.result}
-                                </Text>
-                              </ScrollView>
-                            </View>
-                          ) : null}
-                        </>
-                      )}
-                    </>
+                        {step.name || "tool"}
+                      </RNText>
+                      {step.result ? (
+                        <RNText style={styles.toolResult} numberOfLines={4}>
+                          {step.result}
+                        </RNText>
+                      ) : null}
+                    </View>
                   )}
                 </View>
               </View>
             );
           })}
+          {isStreaming && (
+            <View style={styles.stepRow}>
+              <View style={styles.nodeCol}>
+                <View style={[styles.node, styles.nodeActive]}>
+                  <Icon name="sync" size={11} color={colors.textMuted} />
+                </View>
+              </View>
+              <View style={styles.stepBody}>
+                <RNText style={styles.reasoningText}>thinking…</RNText>
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -163,6 +145,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: spacing.xs,
   },
+  headerText: { color: colors.textMuted, fontSize: 13 },
   railWrap: { marginTop: spacing.xs, paddingLeft: 2 },
   stepRow: { flexDirection: "row" },
   nodeCol: { alignItems: "center", width: 22 },
@@ -176,20 +159,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  nodeActive: { borderColor: colors.textMuted },
   rail: { flex: 1, width: 2, backgroundColor: "#2c2c2c", marginVertical: 2 },
   stepBody: { flex: 1, marginLeft: spacing.sm, paddingBottom: spacing.md },
   stepBodyLast: { paddingBottom: spacing.xs },
-  stepText: { marginTop: 2, lineHeight: 21 },
-  toolTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 2 },
-  toolTitle: { color: colors.link },
-  box: {
-    backgroundColor: "#1b1b1b",
-    borderWidth: 1,
-    borderColor: "#2f2f2f",
-    borderRadius: 10,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
+  // R1-style reasoning: muted secondary, generous line height, no box.
+  reasoningText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
   },
-  boxScroll: { maxHeight: 160 },
-  mono: { fontFamily: "monospace", lineHeight: 18 },
+  toolName: { color: colors.link, fontSize: 14, fontWeight: "500" },
+  toolNameError: { color: colors.error },
+  toolResult: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
 });

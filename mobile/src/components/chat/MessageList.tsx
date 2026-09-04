@@ -15,32 +15,47 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { FlatList, View, StyleSheet, Pressable } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { colors, spacing } from "../../theme";
 import { ChatMessage } from "./ChatMessage";
 import { Trace, type TraceStep } from "./Trace";
+import { MarkdownView } from "./MarkdownView";
 import { Text } from "../ui/Text";
 import { Icon } from "../ui/Icon";
 import type { OmpMessage, ToolCallInfo } from "../../types";
+import { useStore } from "../../store";
+import { openChat } from "../../navigation";
 
 interface Turn {
   assistantMsgs: OmpMessage[];
   results: OmpMessage[];
+  /** Number of transcript messages up to and including this turn (for fork). */
+  messageCount: number;
 }
 
 type Item = { kind: "user"; msg: OmpMessage } | { kind: "turn"; turn: Turn };
 
 function groupTurns(messages: OmpMessage[]): Item[] {
   const items: Item[] = [];
+  let running = 0;
   for (const msg of messages) {
+    running++;
     if (msg.role === "user") {
       items.push({ kind: "user", msg });
     } else if (msg.role === "assistant") {
       const last = items[items.length - 1];
-      if (last && last.kind === "turn") last.turn.assistantMsgs.push(msg);
-      else items.push({ kind: "turn", turn: { assistantMsgs: [msg], results: [] } });
+      if (last && last.kind === "turn") {
+        last.turn.assistantMsgs.push(msg);
+        last.turn.messageCount = running;
+      } else {
+        items.push({ kind: "turn", turn: { assistantMsgs: [msg], results: [], messageCount: running } });
+      }
     } else if (msg.role === "toolResult") {
       const last = items[items.length - 1];
-      if (last && last.kind === "turn") last.turn.results.push(msg);
+      if (last && last.kind === "turn") {
+        last.turn.results.push(msg);
+        last.turn.messageCount = running;
+      }
     }
     // developer/system messages are intentionally not rendered
   }
@@ -66,7 +81,6 @@ function buildSteps(turn: Turn): TraceStep[] {
         steps.push({
           kind: "tool",
           name: block.name,
-          args: block.arguments ? JSON.stringify(block.arguments, null, 2) : undefined,
           result: resultText || undefined,
           isError: result?.isError,
         });
@@ -117,6 +131,13 @@ export function MessageList({
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const { currentSessionId, forkSession } = useStore();
+
+  const handleFork = async (turn: Turn) => {
+    if (!currentSessionId) return;
+    const newId = await forkSession(currentSessionId, turn.messageCount);
+    if (newId) openChat(newId);
+  };
 
   useEffect(() => {
     if (listRef.current) {
@@ -146,7 +167,7 @@ export function MessageList({
   const liveSteps: TraceStep[] = [];
   if (streamingThinking) liveSteps.push({ kind: "reasoning", text: streamingThinking });
   for (const tc of toolCalls || []) {
-    liveSteps.push({ kind: "tool", name: tc.name, args: tc.args || undefined });
+    liveSteps.push({ kind: "tool", name: tc.name });
   }
 
   const hasContent = items.length > 0 || !!isGenerating;
@@ -195,9 +216,9 @@ export function MessageList({
             <View style={styles.turn}>
               <Trace steps={steps} durationMs={meta.duration} />
               {text ? (
-                <Text size="md" color="text" style={styles.assistantText}>
-                  {text}
-                </Text>
+                <View style={styles.assistantWrap}>
+                  <MarkdownView markdown={text} />
+                </View>
               ) : null}
               {!text && steps.length === 0 && (
                 <Text size="sm" color="textMuted" style={styles.assistantText}>
@@ -216,6 +237,24 @@ export function MessageList({
                   )}
                 </View>
               )}
+              {text ? (
+                <View style={styles.actionsRow}>
+                  <Pressable
+                    style={styles.actionButton}
+                    onPress={() => Clipboard.setStringAsync(text).catch(() => {})}
+                    accessibilityLabel="Copy response"
+                  >
+                    <Icon name="copy" size={15} color={colors.textMuted} />
+                  </Pressable>
+                  <Pressable
+                    style={styles.actionButton}
+                    onPress={() => void handleFork(item.turn)}
+                    accessibilityLabel="Branch conversation from here"
+                  >
+                    <Icon name="branch" size={15} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           );
         }}
@@ -224,9 +263,9 @@ export function MessageList({
             <View style={styles.turn}>
               <Trace steps={liveSteps} isStreaming />
               {streamingText ? (
-                <Text size="md" color="text" style={styles.assistantText}>
-                  {streamingText + " ▋"}
-                </Text>
+                <View style={styles.assistantWrap}>
+                  <MarkdownView markdown={streamingText} isStreaming />
+                </View>
               ) : null}
             </View>
           ) : null
@@ -248,7 +287,16 @@ const styles = StyleSheet.create({
   notices: { gap: 2, paddingBottom: spacing.xs },
   turn: { gap: spacing.xs },
   assistantText: { lineHeight: 23, marginTop: spacing.sm },
+  assistantWrap: { marginTop: spacing.sm },
   metaRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs },
+  actionsRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs },
+  actionButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   scrollButton: {
     position: "absolute",
     bottom: spacing.lg,

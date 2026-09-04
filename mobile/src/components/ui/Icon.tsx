@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 export type IconName =
   | "add"
   | "back"
+  | "branch"
   | "chat"
   | "chat-outline"
   | "settings"
@@ -36,11 +37,13 @@ export type IconName =
   | "code"
   | "cloud-offline"
   | "copy"
-  | "retry";
+  | "retry"
+  | "search";
 
 const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   add: "add",
   back: "arrow-back",
+  branch: "git-branch-outline",
   chat: "chatbubbles",
   "chat-outline": "chatbubbles-outline",
   settings: "settings-outline",
@@ -60,6 +63,7 @@ const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   "cloud-offline": "cloud-offline-outline",
   copy: "copy-outline",
   retry: "refresh",
+  search: "search",
 };
 
 interface IconProps {
