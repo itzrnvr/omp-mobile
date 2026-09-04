@@ -31,3 +31,4 @@ Thumbs.db
 # Server
 server/test-ws*.ts
 server/bun.lock
+server/bin/
