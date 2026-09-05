@@ -33,3 +33,4 @@ server/test-ws*.ts
 server/bun.lock
 server/bin/
 models-ls.json
+emu*.log
