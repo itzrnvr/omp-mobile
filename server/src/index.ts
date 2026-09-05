@@ -98,6 +98,11 @@ async function handleSend(
   // extension events. (ext_steer injection proven unavailable: omp
   // sendUserMessage no-ops outside hook context AND bridge->ext socket
   // delivery dropped frames in testing, 2026-09-05.)
+  // TUI-owned session: single writer = the TUI. omp's runtime ExtensionAPI
+  // does NOT expose sendUserMessage (key-dump verified 2026-09-05), so
+  // app->TUI steering is impossible today; refuse with an actionable error
+  // instead of spawning a divergent second writer. ext_steer transport itself
+  // works (post last-hello-wins eviction) - revisit when omp exposes injection.
   if (extOwnerWs(cmd.sessionId)) {
     sendWs(ws, {
       type: 'error',
@@ -356,6 +361,14 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
   const conn = extConns.get(ws);
   if (!conn) return;
   if (m.type === 'ext_hello') {
+    // last-hello-wins: evict stale/half-open entries claiming the same
+    // session (killed transient omp processes leave sockets that report
+    // readyState 1 for minutes and would steal routing, 2026-09-05).
+    if (m.sessionId) {
+      for (const [ws2, c2] of extConns) {
+        if (c2.sessionId === m.sessionId && ws2 !== ws) extConns.delete(ws2);
+      }
+    }
     conn.sessionId = m.sessionId || null;
     if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
     broadcastMobile({ type: 'ext_session', sessionId: conn.sessionId, active: true });
