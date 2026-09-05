@@ -55,6 +55,7 @@ Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId
 - Never add scroll cascades or opacity reveal gates to MessageList's FlatList — they blanked rows on this RN version. HEAD's instant jump (delta>1 → `scrollToOffset(MAX, animated:false)`) is the stable anchoring.
 - Completed turns: force tool-step status `done` when `!isStreaming`, else history rows show running dots.
 - Optimistic user bubble: on a server guard error, pop it (match via `lastSendContent`) or a phantom turn lingers.
+- App→TUI steering is NOT achievable with current omp: `pi.sendUserMessage` no-ops outside hook context (verified from WS callback AND agent_end hook, with error logging), and bridge→ext-socket delivery dropped frames in a controlled fake-ext test. Ceiling = viewer + single-writer guard: app sends to a TUI-owned session get an actionable error (reply there / fork). Dead ext sockets are pruned (readyState check + 30s interval) so exited transient omp processes never block sends.
 - Emulator IME floats and shifts the composer: re-dump content-desc bounds for Send before every tap.
 
 ## Build / test
