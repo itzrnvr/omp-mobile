@@ -173,14 +173,16 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onNewChat={() => openChat()}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-      <Sheet visible={settingsOpen} onClose={() => setSettingsOpen(false)}>
-        <ScrollView
-          style={styles.settingsScroll}
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-        >
+      <Sheet
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        panelStyle={{ height: "78%" }}
+      >
+        {/* SettingsScreen provides its own ScrollView; nesting another one
+            caused the bottom clipping/overflow. */}
+        <View style={styles.settingsWrap}>
           <SettingsScreen embedded />
-        </ScrollView>
+        </View>
       </Sheet>
     </View>
   );
@@ -203,5 +205,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   title: { flex: 1, textAlign: "center", paddingHorizontal: spacing.sm },
-  settingsScroll: { flex: 1 },
+  settingsWrap: { flex: 1 },
 });

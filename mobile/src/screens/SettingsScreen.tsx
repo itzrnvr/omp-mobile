@@ -32,7 +32,7 @@ export function SettingsScreen({ embedded }: { embedded?: boolean }) {
 
   return (
     <ScrollView
-      style={embedded ? undefined : styles.container}
+      style={embedded ? styles.embeddedScroll : styles.container}
       contentContainerStyle={
         embedded
           ? [styles.content, { paddingBottom: spacing.lg }]
@@ -102,6 +102,7 @@ export function SettingsScreen({ embedded }: { embedded?: boolean }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  embeddedScroll: { flex: 1 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   url: { flexShrink: 1, marginLeft: spacing.md },

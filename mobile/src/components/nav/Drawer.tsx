@@ -1,8 +1,14 @@
 /*
  * PURPOSE: Left drawer (reference): backdrop fade + slide-in; brand row
  * (sparkle + name) + X; "New chat" button (#2a2a2a r12); RECENTS label;
- * search input; session rows (title + 52-char preview, active #2c2c2c,
- * long-press → SessionActionSheet); footer row opens Settings sheet.
+ * search input; VIRTUALIZED session rows (title + 52-char preview, active
+ * #2c2c2c, long-press → SessionActionSheet); footer row opens Settings sheet.
+ *
+ * PERF NOTE (2026-09-05): the list was a ScrollView mapping ALL sessions
+ * (~600 rows) which made the drawer take ~1s to appear. FlatList with
+ * initialNumToRender/windowSize fixed the open delay.
+ * TOUCH NOTE: returns null when hidden — an always-mounted opacity-0 backdrop
+ * Pressable swallows every touch on screen.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -12,7 +18,7 @@ import {
   Pressable,
   Animated,
   Easing,
-  ScrollView,
+  FlatList,
   Text as RNText,
   Dimensions,
 } from "react-native";
@@ -73,8 +79,7 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
       )
     : sessions;
 
-  // IMPORTANT: return null when hidden. The backdrop Pressable at opacity 0
-  // would otherwise swallow every touch on the screen (2026-09-05 touch bug).
+  // IMPORTANT: return null when hidden (see TOUCH NOTE above).
   if (!visible) return null;
 
   return (
@@ -127,10 +132,17 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
           </View>
         </View>
 
-        <ScrollView style={styles.list} bounces={false}>
-          {filtered.map((s) => (
+        <FlatList
+          style={styles.list}
+          data={filtered}
+          keyExtractor={(s) => s.id}
+          initialNumToRender={12}
+          maxToRenderPerBatch={20}
+          windowSize={7}
+          removeClippedSubviews
+          bounces={false}
+          renderItem={({ item: s }) => (
             <Pressable
-              key={s.id}
               style={[styles.item, s.id === currentSessionId && styles.itemActive]}
               onPress={() => {
                 onOpenSession(s.id);
@@ -145,8 +157,8 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
                 {preview(s)}
               </RNText>
             </Pressable>
-          ))}
-        </ScrollView>
+          )}
+        />
 
         <Pressable style={styles.footerRow} onPress={onOpenSettings}>
           <Icon name="settings" size={18} color="#8e8e8e" />

@@ -153,6 +153,7 @@ export function MessageList({
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(true);
   const { currentSessionId, forkSession } = useStore();
   const { liveSteps } = useStore();
 
@@ -190,6 +191,11 @@ export function MessageList({
   const items = groupTurns(messages);
 
   const hasContent = items.length > 0 || !!isGenerating;
+
+  // Re-open the working group at the start of each turn.
+  useEffect(() => {
+    if (isGenerating) setLiveOpen(true);
+  }, [isGenerating]);
 
   return (
     <View style={styles.container}>
@@ -251,8 +257,13 @@ export function MessageList({
         ListFooterComponent={
           isGenerating ? (
             <View style={styles.turn}>
-              <Trace steps={liveSteps as TraceStep[]} isStreaming />
-              {streamingText ? (
+              <Trace
+                steps={liveSteps as TraceStep[]}
+                isStreaming
+                open={liveOpen}
+                onToggle={() => setLiveOpen((o) => !o)}
+              />
+              {streamingText && liveOpen ? (
                 <View style={styles.answerWrap}>
                   <MarkdownView markdown={streamingText + " ▋"} />
                 </View>

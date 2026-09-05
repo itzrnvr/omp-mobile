@@ -445,8 +445,10 @@ export const useStore = create<StoreState>((set, get) => {
         sessionId: state.currentSessionId ?? null,
         model,
         thinking,
-        autoApprove: state.approvalMode === "auto",
-        approvalMode: state.approvalMode,
+        // omp -p is non-interactive: without --auto-approve every tool call
+        // (MCP included) is denied. The access-mode UI was removed, so always
+        // auto-approve (2026-09-05: "mcp tool blocked" regression).
+        autoApprove: opts?.autoApprove ?? true,
         cwd: opts?.cwd ?? state.selectedCwd ?? undefined,
       });
     },

@@ -13,6 +13,15 @@
  *   - Tool entry: wrench node, blue (#9ccafa) 14/600 name + [done: blue check |
  *     running: 3 blinking dots] + chevron (rotates 180° when open); expandable
  *     ARGUMENTS + RESULT mono boxes (#1b1b1b / #2f2f2f / r10 / 12.5 mono #a8a8a8).
+ *
+ * CONTROLLED MODE: pass `open` + `onToggle` for the LIVE working group so the
+ * parent can hide the streaming answer preview when the user collapses it
+ * (otherwise the preview slid under the composer). Uncontrolled (history turns)
+ * self-manages as before.
+ *
+ * BUG FIX (2026-09-05): the trailing "thinking…" node rendered even while a
+ * reasoning step was already streaming its text, showing two reasoning rows.
+ * It now only appears when there is no active reasoning step.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -34,8 +43,9 @@ export interface TraceStep {
   name?: string;
   args?: string;
   result?: string;
-  isError?: boolean;
   status?: "running" | "done";
+  id?: string;
+  isError?: boolean;
   dur?: string;
 }
 
@@ -43,6 +53,9 @@ export interface TraceProps {
   steps: TraceStep[];
   durationMs?: number;
   isStreaming?: boolean;
+  /** Controlled open state (live working group); omit for self-managed. */
+  open?: boolean;
+  onToggle?: () => void;
 }
 
 function formatDuration(ms: number): string {
@@ -69,7 +82,7 @@ function LiveDot() {
 
 /** Three blinking dots for a running tool (blink 1.1s staggered). */
 function RunningDots() {
-  const dots = [0, 1, 2].map(() => useRef(new Animated.Value(0.25)).current);
+  const dots = [useRef(new Animated.Value(0.25)).current, useRef(new Animated.Value(0.25)).current, useRef(new Animated.Value(0.25)).current];
   useEffect(() => {
     const anims = dots.map((v, i) =>
       Animated.loop(
@@ -135,20 +148,11 @@ function ToolStep({ step }: { step: TraceStep }) {
         <RNText style={[styles.toolName, step.isError && styles.toolNameError]}>
           {step.name || "tool"}
         </RNText>
-        {done ? (
-          <Icon name="check" size={13} color={colors.link} />
-        ) : (
-          <RunningDots />
-        )}
+        {done ? <Icon name="check" size={13} color={colors.link} /> : <RunningDots />}
         <Animated.View
           style={{
             transform: [
-              {
-                rotate: rotate.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0deg", "180deg"],
-                }),
-              },
+              { rotate: rotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] }) },
             ],
           }}
         >
@@ -179,13 +183,15 @@ function ToolStep({ step }: { step: TraceStep }) {
   );
 }
 
-export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
-  const [open, setOpen] = useState(!!isStreaming);
+export function Trace({ steps, durationMs, isStreaming, open, onToggle }: TraceProps) {
+  const [internalOpen, setInternalOpen] = useState(!!isStreaming);
   const [secs, setSecs] = useState(0);
+  const controlled = open !== undefined;
+  const expanded = controlled ? !!open : internalOpen;
 
   useEffect(() => {
-    if (isStreaming) setOpen(true);
-    else setOpen(false);
+    if (isStreaming) setInternalOpen(true);
+    else setInternalOpen(false);
   }, [isStreaming]);
 
   useEffect(() => {
@@ -198,8 +204,15 @@ export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
 
   const toggle = () => {
     LayoutAnimation.easeInEaseOut();
-    setOpen((o) => !o);
+    if (controlled && onToggle) onToggle();
+    else setInternalOpen((o) => !o);
   };
+
+  // Only show the placeholder "thinking…" node when no reasoning step is
+  // actively streaming text (otherwise it duplicates the reasoning row).
+  const lastStep = steps[steps.length - 1];
+  const showThinkingNode =
+    !!isStreaming && (!lastStep || lastStep.kind !== "reasoning" || !lastStep.text);
 
   return (
     <View style={styles.wrap}>
@@ -209,13 +222,13 @@ export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
           {isStreaming ? `Working · ${secs}s` : `Worked for ${formatDuration(durationMs || 0)}`}
         </RNText>
         <Icon
-          name={open ? "chevron-down" : "chevron-forward"}
+          name={expanded ? "chevron-down" : "chevron-forward"}
           size={16}
           color={colors.textMuted}
         />
       </Pressable>
 
-      {open && (
+      {expanded && (
         <View style={styles.trace}>
           {steps.map((step, i) => {
             const last = i === steps.length - 1 && !isStreaming;
@@ -246,7 +259,7 @@ export function Trace({ steps, durationMs, isStreaming }: TraceProps) {
               </FadeIn>
             );
           })}
-          {isStreaming && (
+          {showThinkingNode && (
             <View style={styles.entry}>
               <View style={styles.node}>
                 <Icon name="sync" size={11} color="#8e8e8e" />
