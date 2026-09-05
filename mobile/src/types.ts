@@ -57,7 +57,17 @@ export interface ServerStatus {
   tunnelStatus: string;
   activeSessions: number;
   totalSessions: number;
-  models: string[];
+  models: ModelCatalogEntry[];
+}
+
+/** One model from omp's models.yml, served via /api/status. */
+export interface ModelCatalogEntry {
+  value: string;
+  label: string;
+  provider: string;
+  reasoning: boolean;
+  contextWindow: number;
+  desc?: string;
 }
 
 // ─── OMP streaming events ───────────────────────────────────────────────────────
@@ -167,6 +177,18 @@ export type WsServerMessage =
   | { type: 'uploaded'; path: string };
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
+
+/** One step of the in-flight chain-of-thought (reasoning or tool call). */
+export interface LiveStep {
+  kind: 'reasoning' | 'tool';
+  text?: string;
+  name?: string;
+  args?: string;
+  result?: string;
+  status?: 'running' | 'done';
+  id?: string;
+  isError?: boolean;
+}
 
 // ─── Model presets ───────────────────────────────────────────────────────────
 

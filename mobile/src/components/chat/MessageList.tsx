@@ -154,6 +154,7 @@ export function MessageList({
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const { currentSessionId, forkSession } = useStore();
+  const { liveSteps } = useStore();
 
   const handleFork = async (turn: Turn) => {
     if (!currentSessionId) return;
@@ -187,12 +188,6 @@ export function MessageList({
   };
 
   const items = groupTurns(messages);
-
-  const liveSteps: TraceStep[] = [];
-  if (streamingThinking) liveSteps.push({ kind: "reasoning", text: streamingThinking });
-  for (const tc of toolCalls || []) {
-    liveSteps.push({ kind: "tool", name: tc.name, args: tc.args || undefined, status: tc.status === "done" ? "done" : "running" });
-  }
 
   const hasContent = items.length > 0 || !!isGenerating;
 
@@ -256,7 +251,7 @@ export function MessageList({
         ListFooterComponent={
           isGenerating ? (
             <View style={styles.turn}>
-              <Trace steps={liveSteps} isStreaming />
+              <Trace steps={liveSteps as TraceStep[]} isStreaming />
               {streamingText ? (
                 <View style={styles.answerWrap}>
                   <MarkdownView markdown={streamingText + " ▋"} />

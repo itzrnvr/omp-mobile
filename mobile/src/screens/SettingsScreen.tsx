@@ -35,7 +35,7 @@ export function SettingsScreen({ embedded }: { embedded?: boolean }) {
       style={embedded ? undefined : styles.container}
       contentContainerStyle={
         embedded
-          ? styles.content
+          ? [styles.content, { paddingBottom: spacing.lg }]
           : [styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]
       }
     >

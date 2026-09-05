@@ -23,6 +23,7 @@ import { listSessions, getSessionHistory } from "./sessions.ts";
 import { deleteSession, forkSession } from "./sessions.ts";
 import { renameSession } from "./sessions.ts";
 import { startTunnel, stopTunnel, getTunnelState } from "./tunnel.ts";
+import { loadModelCatalog } from "./models.ts";
 import type {
   WsClientCommand,
   WsServerMessage,
@@ -62,7 +63,7 @@ async function buildStatus(): Promise<ServerStatus> {
     tunnelStatus: tunnel.status,
     activeSessions: connections.size,
     totalSessions: sessions.length,
-    models: [],
+    models: loadModelCatalog(),
   };
 }
 
@@ -382,3 +383,7 @@ console.log("Press Ctrl+C to stop");
 void startTunnel(PORT).then((state) => {
   console.log(`[tunnel] auto-start: ${state.status}${state.url ? " " + state.url : ""}`);
 });
+
+// Warm the session header cache at boot so the first drawer open is instant
+// (otherwise the first list_sessions parses ~600 JSONL files cold, ~2s).
+void listSessions().then((s) => console.log(`[sessions] cache warmed: ${s.length}`));

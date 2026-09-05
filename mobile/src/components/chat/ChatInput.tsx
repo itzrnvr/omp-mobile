@@ -1,16 +1,16 @@
 /*
- * PURPOSE: Composer, 1:1 with the reference (images 1,2,4,6,7):
+ * PURPOSE: Composer, 1:1 with the reference (images 1,2,4,6,7) minus the
+ * access-mode control (OMP has no approval-mode concept yet):
  *   card #2d2d2d r28 padding 19/16/13; input 18px placeholder #606060;
- *   row gap 17: [+] attach popover · [shield+chev, blue/orange] mode popover ·
- *   [activity while working] · [context button → ContextPopover] · spacer ·
- *   [model 17/500 + chev] model sheet · [mic → DictationSheet] · [send 38px circle].
+ *   row gap 17: [+] attach popover · [activity while working] ·
+ *   [context button → ContextPopover] · spacer · [model 17/500 + chev] model
+ *   sheet · [mic → DictationSheet] · [send 38px circle].
  *   Attachment chips render above the input.
  *
  * KEY DECISIONS:
  * - Popovers render as direct children AFTER the card (they paint above it) and
  *   return null when hidden, so nothing intercepts touches on the composer.
  * - Mic uses a WebView Web-Speech dictation sheet (no native voice module).
- * - Shield color: blue (#7cb6f0) for ask/auto, orange for readonly (image 7).
  */
 
 import React, { useState } from "react";
@@ -19,6 +19,7 @@ import { colors, spacing } from "../../theme";
 import { Icon } from "../ui/Icon";
 import { PopoverMenu } from "../ui/PopoverMenu";
 import { ContextPopover } from "./ContextPopover";
+import { ContextRing } from "../ui/ContextRing";
 import { DictationSheet } from "./DictationSheet";
 import { useStore } from "../../store";
 
@@ -37,7 +38,7 @@ export interface ChatInputProps {
   onPasteLink: () => void;
 }
 
-type Panel = "plus" | "shield" | "ctx" | null;
+type Panel = "plus" | "ctx" | null;
 
 export function ChatInput({
   value,
@@ -56,7 +57,8 @@ export function ChatInput({
   const [panel, setPanel] = useState<Panel>(null);
   const [dictationOpen, setDictationOpen] = useState(false);
   const [cardH, setCardH] = useState(0);
-  const { approvalMode, setApprovalMode, attachments, clearAttachments, lastUsage } = useStore();
+  const { attachments, clearAttachments, lastUsage } = useStore();
+  const { selectedModel, serverStatus } = useStore();
 
   const canSend = value.trim().length > 0 && !isGenerating;
   const offset = cardH + spacing.md + bottomInset + 14;
@@ -65,12 +67,16 @@ export function ChatInput({
     onChangeText((value ? value + " " : "") + text);
   };
 
-  const shieldColor = approvalMode === "readonly" ? "#f59e0b" : colors.link;
   const ctxLabel = lastUsage
+    ? lastUsage.totalTokens > 0
     ? lastUsage.totalTokens >= 1000
       ? (lastUsage.totalTokens / 1000).toFixed(1) + "K"
       : String(lastUsage.totalTokens)
+      : null
     : null;
+  const ctxWindow =
+    (serverStatus?.models || []).find((m) => m.value === selectedModel)?.contextWindow || 0;
+  const ctxPct = ctxWindow > 0 && lastUsage ? lastUsage.totalTokens / ctxWindow : 0;
 
   return (
     <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
@@ -103,14 +109,6 @@ export function ChatInput({
           <Pressable onPress={() => setPanel(panel === "plus" ? null : "plus")} accessibilityLabel="Add">
             <Icon name="add" size={24} color="#a3a3a3" />
           </Pressable>
-          <Pressable
-            style={styles.shieldGroup}
-            onPress={() => setPanel(panel === "shield" ? null : "shield")}
-            accessibilityLabel="Tool approval mode"
-          >
-            <Icon name="shield" size={22} color={shieldColor} />
-            <Icon name="chevron-down" size={13} color={shieldColor} />
-          </Pressable>
           {isGenerating && (
             <View style={styles.activity}>
               <Icon name="activity" size={16} color="#a3a3a3" />
@@ -121,7 +119,7 @@ export function ChatInput({
             accessibilityLabel="Context usage"
           >
             <View style={styles.ctxButton}>
-              <Icon name="sync" size={14} color="#a3a3a3" />
+              <ContextRing pct={ctxPct} size={16} />
               {ctxLabel ? <RNText style={styles.ctxText}>{ctxLabel}</RNText> : null}
             </View>
           </Pressable>
@@ -169,28 +167,6 @@ export function ChatInput({
           { label: "Attach files", icon: "paperclip", onPress: onAttachFiles },
           { label: "Take a photo", icon: "camera", onPress: onTakePhoto },
           { label: "Paste a link", icon: "link", onPress: onPasteLink },
-        ]}
-      />
-      <PopoverMenu
-        visible={panel === "shield"}
-        onClose={() => setPanel(null)}
-        offsetBottom={offset}
-        items={[
-          {
-            label: "Auto-run tools",
-            checked: approvalMode === "auto",
-            onPress: () => setApprovalMode("auto"),
-          },
-          {
-            label: "Ask before running",
-            checked: approvalMode === "ask",
-            onPress: () => setApprovalMode("ask"),
-          },
-          {
-            label: "Read-only mode",
-            checked: approvalMode === "readonly",
-            onPress: () => setApprovalMode("readonly"),
-          },
         ]}
       />
       <ContextPopover visible={panel === "ctx"} onClose={() => setPanel(null)} offsetBottom={offset} />
@@ -241,7 +217,6 @@ const styles = StyleSheet.create({
     paddingBottom: 26,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 17, paddingHorizontal: 4 },
-  shieldGroup: { flexDirection: "row", alignItems: "center", gap: 5 },
   activity: { flexDirection: "row", alignItems: "center" },
   ctxButton: {
     flexDirection: "row",

@@ -1,1 +1,1 @@
-{"name":"omp-bridge-server","version":"1.0.0","description":"Bridge server connecting OMP CLI to the OMP Mobile app via WebSocket + REST","type":"module","scripts":{"dev":"bun run src/index.ts","start":"bun run src/index.ts"},"devDependencies":{"@types/bun":"latest"}}
+{"name":"omp-bridge-server","version":"1.0.0","description":"Bridge server connecting OMP CLI to the OMP Mobile app via WebSocket + REST","type":"module","scripts":{"dev":"bun run src/index.ts","start":"bun run src/index.ts"},"devDependencies":{"@types/bun":"latest"},"dependencies":{"yaml":"2.9.0"}}

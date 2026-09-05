@@ -8,6 +8,8 @@
  * - Session data is read from OMP's JSONL files at ~/.omp/agent/sessions/.
  */
 
+import type { ModelCatalogEntry } from "./models.ts";
+
 // ─── OMP JSON Event Types (from `omp --mode=json`) ────────────────────────────
 
 export interface OmpSessionEvent {
@@ -286,5 +288,5 @@ export interface ServerStatus {
   tunnelStatus: "stopped" | "starting" | "active" | "error";
   activeSessions: number;
   totalSessions: number;
-  models: string[];
+  models: ModelCatalogEntry[];
 }

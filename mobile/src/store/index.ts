@@ -16,6 +16,7 @@ import type {
   WsServerMessage,
   ToolCallInfo,
   ThinkingLevel,
+  LiveStep,
 } from '../types';
 
 const KEY_URL = 'omp.serverUrl';
@@ -62,6 +63,10 @@ interface StoreState {
   thinkingLevel: ThinkingLevel;
   selectedCwd: string | null;
   toolCalls: ToolCallInfo[];
+  /** In-flight chain-of-thought steps for the live working group. */
+  liveSteps: LiveStep[];
+  /** Assistant/toolResult messages buffered until the turn completes. */
+  pendingMessages: OmpMessage[];
   notices: { level: string; message: string }[];
   sessionTitle: string | null;
   /** Context tokens used by the latest assistant turn (usage.totalTokens). */
@@ -108,21 +113,9 @@ interface StoreState {
 
 export const useStore = create<StoreState>((set, get) => {
   const flushStream = (): void => {
-    const { streamingText, streamingThinking, messages, currentModel } = get();
-    if (streamingText || streamingThinking) {
-      const content: OmpContentBlock[] = [];
-      if (streamingThinking) {
-        content.push({ type: 'thinking', thinking: streamingThinking });
-      }
-      if (streamingText) {
-        content.push({ type: 'text', text: streamingText });
-      }
-      set({
-        messages: [...messages, { role: 'assistant', content, model: currentModel ?? undefined }],
-        streamingText: '',
-        streamingThinking: '',
-      });
-    }
+    // Live-turn buffering commits on 'complete'; flush only clears in-flight
+    // state (used when switching sessions mid-turn).
+    set({ streamingText: '', streamingThinking: '', liveSteps: [], pendingMessages: [] });
   };
 
   const processEvent = (event: OmpEvent, sessionId: string): void => {
@@ -132,7 +125,15 @@ export const useStore = create<StoreState>((set, get) => {
         break;
       }
       case 'agent_start': {
-        set({ isGenerating: true, streamingText: '', streamingThinking: '', toolCalls: [], notices: [] });
+        set({
+          isGenerating: true,
+          streamingText: '',
+          streamingThinking: '',
+          toolCalls: [],
+          liveSteps: [],
+          pendingMessages: [],
+          notices: [],
+        });
         break;
       }
       case 'turn_start': {
@@ -157,16 +158,35 @@ export const useStore = create<StoreState>((set, get) => {
             set((s) => ({ streamingText: s.streamingText + delta }));
           }
         } else if (sub.type === 'thinking_start') {
-          set({ streamingThinking: '' });
+          set((s) => ({
+            streamingThinking: '',
+            liveSteps: [...s.liveSteps, { kind: 'reasoning', text: '' }],
+          }));
         } else if (sub.type === 'thinking_delta') {
           const delta = sub.delta || sub.text;
           if (typeof delta === 'string') {
-            set((s) => ({ streamingThinking: s.streamingThinking + delta }));
+            set((s) => {
+              const steps = s.liveSteps.slice();
+              for (let i = steps.length - 1; i >= 0; i--) {
+                if (steps[i].kind === 'reasoning') {
+                  steps[i] = { ...steps[i], text: (steps[i].text || '') + delta };
+                  break;
+                }
+              }
+              return { liveSteps: steps, streamingThinking: s.streamingThinking + delta };
+            });
           }
         } else if (sub.type === 'tool_call_start') {
           if (sub.toolCallId && sub.toolName) {
             set((s) => ({
               toolCalls: [...s.toolCalls, {
+                id: sub.toolCallId!,
+                name: sub.toolName!,
+                args: '',
+                status: 'running' as const,
+              }],
+              liveSteps: [...s.liveSteps, {
+                kind: 'tool',
                 id: sub.toolCallId!,
                 name: sub.toolName!,
                 args: '',
@@ -181,12 +201,18 @@ export const useStore = create<StoreState>((set, get) => {
               toolCalls: s.toolCalls.map((tc) =>
                 tc.id === sub.toolCallId ? { ...tc, args: tc.args + delta } : tc
               ),
+              liveSteps: s.liveSteps.map((st) =>
+                st.id === sub.toolCallId ? { ...st, args: (st.args || '') + delta } : st
+              ),
             }));
           }
         } else if (sub.type === 'tool_call_end') {
           set((s) => ({
             toolCalls: s.toolCalls.map((tc) =>
               tc.id === sub.toolCallId ? { ...tc, status: 'done' as const } : tc
+            ),
+            liveSteps: s.liveSteps.map((st) =>
+              st.id === sub.toolCallId ? { ...st, status: 'done' as const } : st
             ),
           }));
         }
@@ -197,7 +223,18 @@ export const useStore = create<StoreState>((set, get) => {
         // Tool results are their own messages; keep them so the trace can pair
         // results to tool_use blocks by toolCallId (live and from history).
         if (msg?.role === 'toolResult') {
-          set((s) => ({ messages: [...s.messages, msg] }));
+          const text = (msg.content || [])
+            .map((c) => (c.type === 'text' ? c.text || '' : ''))
+            .join('\n')
+            .trim();
+          set((s) => ({
+            pendingMessages: [...s.pendingMessages, msg],
+            liveSteps: s.liveSteps.map((st) =>
+              st.id === msg.toolCallId
+                ? { ...st, result: text || undefined, isError: msg.isError, status: 'done' as const }
+                : st
+            ),
+          }));
           break;
         }
         const isAssistant = msg?.role === 'assistant' ||
@@ -227,73 +264,31 @@ export const useStore = create<StoreState>((set, get) => {
         }
 
         const { streamingText, streamingThinking, messages, currentModel } = get();
-        // If we have streamed content, use it; otherwise use the message content
-        if (streamingText || streamingThinking) {
-          const content: OmpContentBlock[] = [];
-          // Include thinking from stream or from message
-          if (streamingThinking) {
-            content.push({ type: 'thinking', thinking: streamingThinking });
-          } else if (msg?.content) {
-            const msgThinking = msg.content.find((c) => c.type === 'thinking');
-            if (msgThinking) content.push(msgThinking);
-          }
-          // Include text from stream or from message
-          if (streamingText) {
-            content.push({ type: 'text', text: streamingText });
-          } else if (msg?.content) {
-            const msgText = msg.content.find((c) => c.type === 'text');
-            if (msgText) content.push(msgText);
-          }
-          // Include tool_use blocks from message
-          if (msg?.content) {
-            for (const block of msg.content) {
-              if (block.type === 'tool_use') content.push(block);
-            }
-          }
-          const finalized: OmpMessage = {
-            role: 'assistant',
-            content,
-            model: msg?.model ?? currentModel ?? undefined,
-            usage: msg?.usage,
-            cost: msg?.cost ?? event.cost,
-            duration: msg?.duration ?? event.duration,
-            ttft: msg?.ttft ?? event.ttft,
-          };
-          set({ messages: [...messages, finalized], streamingText: '', streamingThinking: '' });
-        } else if (msg?.content && msg.content.length > 0) {
-          // Server delivered complete content
-          const finalized: OmpMessage = {
-            role: 'assistant',
-            content: msg.content,
-            model: msg.model,
-            usage: msg.usage,
-            cost: msg.cost ?? event.cost,
-            duration: msg.duration ?? event.duration,
-            ttft: msg.ttft ?? event.ttft,
-          };
-          set((s) => ({ messages: [...s.messages, finalized] }));
-        } else {
-          // Turn completed with no assistant content (e.g. resumed legacy
-          // sessions where OMP emits nothing). Show an explicit placeholder so
-          // the user never sees a silent dead turn.
-          const finalized: OmpMessage = {
-            role: 'assistant',
-            content: [{ type: 'text', text: '(empty response)' }],
-            model: msg?.model ?? currentModel ?? undefined,
-            usage: msg?.usage,
-            cost: msg?.cost ?? event.cost,
-            duration: msg?.duration ?? event.duration,
-          };
-          set((s) => ({ messages: [...s.messages, finalized] }));
-        }
+        // Buffer the assistant message; the whole turn commits on 'complete'
+        // so the live working group stays one smooth unit while interleaving.
+        set((s) => ({
+          pendingMessages: msg ? [...s.pendingMessages, msg] : s.pendingMessages,
+          streamingText: '',
+          streamingThinking: '',
+        }));
         break;
       }
       case 'turn_end': {
         break;
       }
       case 'agent_end': {
-        flushStream();
-        set({ isGenerating: false });
+        // 'complete' follows; commit here too so a missing complete still lands.
+        const { pendingMessages } = get();
+        if (pendingMessages.length > 0) {
+          set((s) => ({
+            messages: [...s.messages, ...pendingMessages],
+            pendingMessages: [],
+            liveSteps: [],
+            streamingText: '',
+            streamingThinking: '',
+            isGenerating: false,
+          }));
+        }
         break;
       }
       case 'custom': {
@@ -402,6 +397,8 @@ export const useStore = create<StoreState>((set, get) => {
     thinkingLevel: 'high' as ThinkingLevel,
     selectedCwd: null,
     toolCalls: [],
+    liveSteps: [],
+    pendingMessages: [],
     notices: [],
     sessionTitle: null,
     contextTokens: 0,
@@ -493,13 +490,19 @@ export const useStore = create<StoreState>((set, get) => {
           processEvent(msg.event, msg.sessionId);
           break;
         case 'complete':
-          flushStream();
-          set({ isGenerating: false });
+        case 'complete':
+        case 'error': {
+          const { pendingMessages } = get();
+          set((s) => ({
+            messages: [...s.messages, ...pendingMessages],
+            pendingMessages: [],
+            liveSteps: [],
+            streamingText: '',
+            streamingThinking: '',
+            isGenerating: false,
+          }));
           break;
-        case 'error':
-          flushStream();
-          set({ isGenerating: false });
-          break;
+        }
         case 'sessions':
           set({ sessions: msg.sessions, loadingSessions: false });
           break;

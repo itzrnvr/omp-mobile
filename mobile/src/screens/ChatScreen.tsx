@@ -54,6 +54,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     wsStatus,
     uploadAttachment,
     addAttachment,
+    serverStatus,
   } = useStore();
 
   const sessionId = route?.params?.sessionId;
@@ -123,7 +124,9 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   }
 
   const modelLabel =
-    MODEL_PRESETS.find((m) => m.value === selectedModel)?.label || selectedModel || "Model";
+    (serverStatus?.models || []).find((m) => m.value === selectedModel)?.label ||
+    MODEL_PRESETS.find((m) => m.value === selectedModel)?.label ||
+    (selectedModel ? selectedModel.split("/").pop() || selectedModel : "Model");
 
   return (
     <View style={styles.container}>
@@ -171,7 +174,11 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <Sheet visible={settingsOpen} onClose={() => setSettingsOpen(false)}>
-        <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.settingsScroll}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
           <SettingsScreen embedded />
         </ScrollView>
       </Sheet>
@@ -196,4 +203,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   title: { flex: 1, textAlign: "center", paddingHorizontal: spacing.sm },
+  settingsScroll: { flex: 1 },
 });

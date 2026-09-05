@@ -12,6 +12,7 @@ import React, { useEffect, useRef } from "react";
 import { View, StyleSheet, Pressable, Animated, Text as RNText } from "react-native";
 import { colors, spacing } from "../../theme";
 import { useStore } from "../../store";
+import { ContextRing } from "../ui/ContextRing";
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -69,7 +70,10 @@ export function ContextPopover({ visible, onClose, offsetBottom = 14 }: ContextP
         ]}
       >
         <View style={styles.titleRow}>
-          <RNText style={styles.title}>Context usage</RNText>
+          <View style={styles.titleLeft}>
+            <ContextRing pct={hitRate} size={18} />
+            <RNText style={styles.title}>Context usage</RNText>
+          </View>
           <RNText style={styles.mono}>
             {fmt(total)} tok{u ? ` (${Math.round(hitRate * 100)}% cache)` : ""}
           </RNText>
@@ -121,6 +125,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: { fontSize: 16, fontWeight: "600", color: colors.text },
+  titleLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   mono: { fontFamily: "monospace", fontSize: 13, color: "#9b9b9b" },
   track: {
     height: 6,
