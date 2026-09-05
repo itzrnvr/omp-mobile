@@ -651,6 +651,13 @@ export const useStore = create<StoreState>((set, get) => {
           }
           break;
         }
+        case 'steered': {
+          // Bridge routed our send into the TUI turn as steering; it will
+          // echo back as a user message via ext events. Ack above composer.
+          set({ errorToast: 'Steering sent to the TUI turn - it will pick it up at the next boundary.' });
+          setTimeout(() => set({ errorToast: null }), 4000);
+          break;
+        }
         case 'ext_session': {
           const sid = msg.sessionId;
           set((s) => ({

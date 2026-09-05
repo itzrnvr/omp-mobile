@@ -103,12 +103,10 @@ async function handleSend(
   // app->TUI steering is impossible today; refuse with an actionable error
   // instead of spawning a divergent second writer. ext_steer transport itself
   // works (post last-hello-wins eviction) - revisit when omp exposes injection.
-  if (extOwnerWs(cmd.sessionId)) {
-    sendWs(ws, {
-      type: 'error',
-      message:
-        'Live in the omp TUI right now - it is the single writer for this session. Reply there, or fork it here to branch safely.',
-    });
+  const ownerWs = extOwnerWs(cmd.sessionId);
+  if (ownerWs) {
+    sendWs(ownerWs, { type: 'ext_steer', content: cmd.content });
+    sendWs(ws, { type: 'steered', sessionId: cmd.sessionId || null });
     return;
   }
   if (state.ompKill) {
