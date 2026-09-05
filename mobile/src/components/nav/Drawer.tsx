@@ -79,19 +79,23 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
       )
     : sessions;
 
-  // IMPORTANT: return null when hidden (see TOUCH NOTE above).
-  if (!visible) return null;
-
+  // TOUCH NOTE (2026-09-05): the subtree stays MOUNTED at all times so opening
+  // is instant (no remount of the list). Touch safety comes from pointerEvents:
+  // hidden => root swallows nothing ("none"); visible => box-none plus the
+  // backdrop Pressable (mounted only while visible) closes on tap.
   return (
-    <View style={styles.root} pointerEvents="box-none">
+    <View style={styles.root} pointerEvents={visible ? "box-none" : "none"}>
       <Animated.View style={[styles.backdrop, { opacity: fade }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        {visible ? <Pressable style={StyleSheet.absoluteFill} onPress={onClose} /> : null}
       </Animated.View>
       <Animated.View
         style={[
           styles.panel,
           {
             paddingTop: Math.max(insets.top, spacing.md),
+            // keep the "Settings & server" footer clear of the gesture bar
+            // on tablets/phones with inset nav (2026-09-05 tablet capture)
+            paddingBottom: Math.max(insets.bottom, spacing.md),
             transform: [
               {
                 translateX: slide.interpolate({

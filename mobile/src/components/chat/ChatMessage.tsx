@@ -23,7 +23,9 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const content = message.content || [];
   const textBlocks = content.filter((c) => c.type === "text");
   const thinkingBlocks = content.filter((c) => c.type === "thinking");
-  const toolBlocks = content.filter((c) => c.type === "tool_use");
+  const toolBlocks = content.filter(
+    (c) => c.type === "tool_use" || c.type === "toolCall",
+  );
 
   // Old print-mode sessions store empty assistant content; render nothing
   // instead of a lone floating metadata bar.

@@ -84,6 +84,8 @@ interface StoreState {
   sessions: SessionSummary[];
   loadingSessions: boolean;
   refreshSessions: () => void;
+  /** Re-request server status (model catalog, tunnel, counts) over WS. */
+  refreshStatus: () => void;
   deleteSession: (sessionId: string) => void;
   /** Fork a session up to messageCount messages; resolves with the new session id. */
   forkSession: (sessionId: string, messageCount: number) => Promise<string | null>;
@@ -176,45 +178,44 @@ export const useStore = create<StoreState>((set, get) => {
               return { liveSteps: steps, streamingThinking: s.streamingThinking + delta };
             });
           }
-        } else if (sub.type === 'tool_call_start') {
-          if (sub.toolCallId && sub.toolName) {
-            set((s) => ({
-              toolCalls: [...s.toolCalls, {
-                id: sub.toolCallId!,
-                name: sub.toolName!,
-                args: '',
-                status: 'running' as const,
-              }],
-              liveSteps: [...s.liveSteps, {
-                kind: 'tool',
-                id: sub.toolCallId!,
-                name: sub.toolName!,
-                args: '',
-                status: 'running' as const,
-              }],
-            }));
-          }
-        } else if (sub.type === 'tool_call_delta') {
+        } else if (sub.type === 'tool_call_start' || sub.type === 'toolcall_start') {
+          // omp streams toolcall_start with ONLY {contentIndex}; the real
+          // id/name arrive with the assistant message_end content blocks
+          // (reconciled there by index). Placeholder keeps the row live.
+          const idx = typeof sub.contentIndex === 'number' ? sub.contentIndex : -1;
+          const id = sub.toolCallId || 'pending-' + idx;
+          const name = sub.toolName || 'tool';
+          set((s) => ({
+            toolCalls: [...s.toolCalls, { id, name, args: '', status: 'running' as const }],
+            liveSteps: [...s.liveSteps, {
+              kind: 'tool' as const,
+              id,
+              name,
+              args: '',
+              status: 'running' as const,
+              idx,
+            }],
+          }));
+        } else if (sub.type === 'tool_call_delta' || sub.type === 'toolcall_delta') {
           const delta = sub.delta || sub.args || '';
+          const idx = typeof sub.contentIndex === 'number' ? sub.contentIndex : -1;
           if (delta) {
             set((s) => ({
               toolCalls: s.toolCalls.map((tc) =>
-                tc.id === sub.toolCallId ? { ...tc, args: tc.args + delta } : tc
+                (sub.toolCallId && tc.id === sub.toolCallId) || (idx >= 0 && tc.id === 'pending-' + idx)
+                  ? { ...tc, args: tc.args + delta }
+                  : tc
               ),
               liveSteps: s.liveSteps.map((st) =>
-                st.id === sub.toolCallId ? { ...st, args: (st.args || '') + delta } : st
+                (sub.toolCallId && st.id === sub.toolCallId) || (idx >= 0 && st.idx === idx)
+                  ? { ...st, args: (st.args || '') + delta }
+                  : st
               ),
             }));
           }
-        } else if (sub.type === 'tool_call_end') {
-          set((s) => ({
-            toolCalls: s.toolCalls.map((tc) =>
-              tc.id === sub.toolCallId ? { ...tc, status: 'done' as const } : tc
-            ),
-            liveSteps: s.liveSteps.map((st) =>
-              st.id === sub.toolCallId ? { ...st, status: 'done' as const } : st
-            ),
-          }));
+        } else if (sub.type === 'tool_call_end' || sub.type === 'toolcall_end') {
+          // Args complete; execution starts now. Done-status + result come
+          // with the toolResult message — do NOT mark done here.
         }
         break;
       }
@@ -240,6 +241,29 @@ export const useStore = create<StoreState>((set, get) => {
         const isAssistant = msg?.role === 'assistant' ||
           (msg?.role === undefined && (get().streamingText.length > 0 || get().streamingThinking.length > 0));
         if (!isAssistant) break;
+
+        // Reconcile live tool steps: toolcall_start carried only contentIndex;
+        // the assistant content blocks now carry the real id/name per index,
+        // so placeholder rows get their wrench label + result pairing id.
+        if (msg?.content) {
+          msg.content.forEach((b, i) => {
+            if (b.type !== 'toolCall' && b.type !== 'tool_use') return;
+            const realId = b.id || '';
+            if (!realId) return;
+            set((s) => ({
+              liveSteps: s.liveSteps.map((st) =>
+                st.kind === 'tool' && st.idx === i
+                  ? { ...st, id: realId, name: b.name || st.name || 'tool' }
+                  : st
+              ),
+              toolCalls: s.toolCalls.map((tc) =>
+                tc.id === 'pending-' + i
+                  ? { ...tc, id: realId, name: b.name || tc.name }
+                  : tc
+              ),
+            }));
+          });
+        }
 
         // Context indicator: latest usage.totalTokens from the assistant turn.
         const usage = msg?.usage;
@@ -293,7 +317,7 @@ export const useStore = create<StoreState>((set, get) => {
       }
       case 'custom': {
         const ct = event.customType || (event.data && (event.data as Record<string, unknown>).customType) || '';
-        if (ct === 'tool_execution_start' || ct === 'toolₑxecutionₛtart') {
+        if (ct === 'tool_execution_start') {
           const data = event.data as Record<string, unknown> | undefined;
           if (data?.toolCallId && data?.toolName) {
             set((s) => ({
@@ -305,7 +329,7 @@ export const useStore = create<StoreState>((set, get) => {
               }],
             }));
           }
-        } else if (ct === 'tool_execution_end' || ct === 'toolₑxecutionₑnd') {
+        } else if (ct === 'tool_execution_end') {
           const data = event.data as Record<string, unknown> | undefined;
           if (data?.toolCallId) {
             set((s) => ({
@@ -551,6 +575,10 @@ export const useStore = create<StoreState>((set, get) => {
     refreshSessions: () => {
       set({ loadingSessions: true });
       wsService?.send({ type: 'list_sessions' });
+    },
+
+    refreshStatus: () => {
+      wsService?.send({ type: 'get_status' });
     },
 
     deleteSession: (sessionId) => {

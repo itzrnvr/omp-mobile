@@ -6,7 +6,14 @@
 
 // ─── Content blocks & messages ────────────────────────────────────────────────
 
-export type OmpContentBlockType = 'text' | 'thinking' | 'tool_use' | 'tool_result';
+// 'toolCall' is the block type omp/pi writes to JSONL history;
+// 'tool_use' is the Anthropic-shaped equivalent. Accept both everywhere.
+export type OmpContentBlockType =
+  | 'text'
+  | 'thinking'
+  | 'tool_use'
+  | 'toolCall'
+  | 'tool_result';
 
 export interface OmpContentBlock {
   type: OmpContentBlockType;
@@ -92,7 +99,9 @@ export type OmpEventType =
 export type AssistantMessageEventType =
   | 'text_start' | 'text_delta' | 'text_end'
   | 'thinking_start' | 'thinking_delta' | 'thinking_end'
-  | 'tool_call_start' | 'tool_call_delta' | 'tool_call_end';
+  | 'tool_call_start' | 'tool_call_delta' | 'tool_call_end'
+  // omp's actual wire names (tool_call_* kept for compat):
+  | 'toolcall_start' | 'toolcall_delta' | 'toolcall_end';
 
 export interface AssistantMessageEvent {
   type: AssistantMessageEventType;
@@ -188,9 +197,11 @@ export interface LiveStep {
   status?: 'running' | 'done';
   id?: string;
   isError?: boolean;
+  /** Content-block index; reconciles toolcall_start placeholders (2026-09-05). */
+  idx?: number;
 }
 
-// ─── Model presets ───────────────────────────────────────────────────────────
+// ─── Model presets ─────────────────────────────────────────────────────────
 
 export interface ModelPreset {
   label: string;

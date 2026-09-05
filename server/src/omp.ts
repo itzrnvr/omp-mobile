@@ -42,6 +42,11 @@ function buildArgs(opts: OmpSpawnOptions): string[] {
     opts.approvalMode !== "readonly"
   ) {
     args.push("--auto-approve");
+    // --auto-approve alone does NOT cover MCP tool calls: omp gates them via
+    // tools.approvalMode and, in -p mode, returns "requires approval but no
+    // interactive UI available". --approval-mode=yolo is the session-scoped
+    // override that lets MCP tools run (2026-09-05, tavily block root cause).
+    args.push("--approval-mode=yolo");
   }
   if (opts.approvalMode === "ask" || opts.approvalMode === "readonly") {
     // omp has no pure read-only flag for -p; always-ask denies interactive

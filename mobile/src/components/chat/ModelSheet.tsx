@@ -47,6 +47,7 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
     recentModels,
     serverStatus,
   } = useStore();
+  const refreshStatus = useStore((s) => s.refreshStatus);
   const [cwdInput, setCwdInput] = useState(selectedCwd || "");
   const [query, setQuery] = useState("");
   const [openProviders, setOpenProviders] = useState<Record<string, boolean>>({});
@@ -57,8 +58,11 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
       setQuery("");
       const current = selectedModel ? selectedModel.split("/")[0] : "";
       setOpenProviders((prev) => ({ ...prev, [current]: true }));
+      // catalog arrives via WS status; re-request in case it was missed
+      // (reconnect race) so the sheet never shows the offline preset fallback
+      refreshStatus();
     }
-  }, [visible, selectedCwd, selectedModel]);
+  }, [visible, selectedCwd, selectedModel, refreshStatus]);
 
   // Full catalog from the server; fall back to local presets when offline.
   const catalog: ModelCatalogEntry[] = useMemo(() => {
@@ -132,6 +136,9 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
 
         <RNText style={[styles.sectionTitle, recents.length > 0 && styles.sectionGap]}>
           PROVIDERS
+          <RNText style={styles.providerCount}>
+            {"  ·  " + providers.length + " providers · " + catalog.length + " models"}
+          </RNText>
         </RNText>
         <View style={styles.searchWrap}>
           <Icon name="search" size={15} color="#8e8e8e" />

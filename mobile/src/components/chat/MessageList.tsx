@@ -72,7 +72,10 @@ function buildSteps(turn: Turn): TraceStep[] {
     for (const block of msg.content || []) {
       if (block.type === "thinking" && block.thinking) {
         steps.push({ kind: "reasoning", text: block.thinking });
-      } else if (block.type === "tool_use") {
+      } else if (block.type === "tool_use" || block.type === "toolCall") {
+        // omp JSONL history uses block type "toolCall" (pi format):
+        // {type,id,name,arguments}; live stream uses tool_call_* events.
+        // Accept both so restored sessions show their tool rows (2026-09-05).
         const result = block.id ? byCallId.get(block.id) : undefined;
         const resultText = result?.content
           ?.map((c) => (c.type === "text" ? c.text || "" : ""))
