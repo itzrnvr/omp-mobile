@@ -214,7 +214,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
 /**
  * Find a session JSONL file by session ID.
  */
-async function findSessionFile(sessionId: string): Promise<string | null> {
+export async function findSessionFile(sessionId: string): Promise<string | null> {
   let cwdDirs: Dirent[];
   try {
     cwdDirs = readdirSync(SESSIONS_DIR, { withFileTypes: true });

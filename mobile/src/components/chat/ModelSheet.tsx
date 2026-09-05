@@ -19,6 +19,7 @@ import {
   LayoutAnimation,
 } from "react-native";
 import { Sheet } from "../ui/Sheet";
+import { FolderPicker } from "./FolderPicker";
 import { Input } from "../ui/Input";
 import { Icon } from "../ui/Icon";
 import { colors, spacing, radii } from "../../theme";
@@ -48,13 +49,12 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
     serverStatus,
   } = useStore();
   const refreshStatus = useStore((s) => s.refreshStatus);
-  const [cwdInput, setCwdInput] = useState(selectedCwd || "");
   const [query, setQuery] = useState("");
   const [openProviders, setOpenProviders] = useState<Record<string, boolean>>({});
+  const [folderOpen, setFolderOpen] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      setCwdInput(selectedCwd || "");
       setQuery("");
       const current = selectedModel ? selectedModel.split("/")[0] : "";
       setOpenProviders((prev) => ({ ...prev, [current]: true }));
@@ -113,6 +113,7 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
   };
 
   return (
+    <>
     <Sheet visible={visible} onClose={onClose}>
       <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
         {recents.length > 0 && (
@@ -155,6 +156,21 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
           </View>
         </View>
 
+        <RNText style={[styles.sectionTitle, styles.sectionGap]}>REASONING</RNText>
+        <View style={styles.segmented}>
+          {THINKING_LEVELS.map((lvl) => (
+            <Pressable
+              key={lvl}
+              style={[styles.segment, thinkingLevel === lvl && styles.segmentActive]}
+              onPress={() => setThinkingLevel(lvl as ThinkingLevel)}
+            >
+              <RNText style={[styles.segmentText, thinkingLevel === lvl && styles.segmentTextActive]}>
+                {lvl}
+              </RNText>
+            </Pressable>
+          ))}
+        </View>
+
         {providers.map((group) => {
           const open = !!openProviders[group.name] || q.length > 0;
           return (
@@ -193,42 +209,19 @@ export function ModelSheet({ visible, onClose }: ModelSheetProps) {
           <RNText style={styles.noResults}>No models match “{query}”</RNText>
         )}
 
-        <RNText style={[styles.sectionTitle, styles.sectionGap]}>REASONING</RNText>
-        <View style={styles.segmented}>
-          {THINKING_LEVELS.map((lvl) => (
-            <Pressable
-              key={lvl}
-              style={[styles.segment, thinkingLevel === lvl && styles.segmentActive]}
-              onPress={() => setThinkingLevel(lvl as ThinkingLevel)}
-            >
-              <RNText style={[styles.segmentText, thinkingLevel === lvl && styles.segmentTextActive]}>
-                {lvl}
-              </RNText>
-            </Pressable>
-          ))}
-        </View>
 
         <RNText style={[styles.sectionTitle, styles.sectionGap]}>FOLDER</RNText>
-        <View style={styles.folderWrap}>
-          <Input
-            value={cwdInput}
-            onChangeText={setCwdInput}
-            placeholder="e.g. D:/projects/app"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <Pressable
-            style={styles.applyFolder}
-            onPress={() => {
-              setSelectedCwd(cwdInput.trim() || "");
-              onClose();
-            }}
-          >
-            <RNText style={styles.applyFolderText}>Use this folder</RNText>
-          </Pressable>
-        </View>
+        <Pressable style={styles.folderTrigger} onPress={() => setFolderOpen(true)}>
+          <Icon name="folder" size={18} color="#9ccafa" />
+          <RNText style={styles.folderTriggerText} numberOfLines={1}>
+            {selectedCwd || "Choose a folder on the PC…"}
+          </RNText>
+          <Icon name="chevron-forward" size={14} color="#606060" />
+        </Pressable>
       </ScrollView>
     </Sheet>
+    <FolderPicker visible={folderOpen} onClose={() => setFolderOpen(false)} />
+    </>
   );
 }
 
@@ -317,12 +310,15 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: "#2d2d2d" },
   segmentText: { fontSize: 13, color: colors.textMuted, fontWeight: "500" },
   segmentTextActive: { color: colors.text },
-  folderWrap: { paddingHorizontal: 12, paddingBottom: spacing.sm, gap: spacing.sm },
-  applyFolder: {
+  folderTrigger: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 11,
+    gap: spacing.sm,
+    height: 44,
+    paddingHorizontal: spacing.md,
     borderRadius: radii.md,
     backgroundColor: "#2d2d2d",
+    marginBottom: spacing.md,
   },
-  applyFolderText: { fontSize: 14, fontWeight: "500", color: colors.text },
+  folderTriggerText: { flex: 1, fontSize: 13, color: colors.textSecondary },
 });

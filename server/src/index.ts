@@ -17,13 +17,14 @@
  */
 
 import { spawnOmp, getOmpVersion } from "./omp.ts";
-import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { listSessions, getSessionHistory } from "./sessions.ts";
+import { join, dirname, isAbsolute, resolve } from "node:path";
+import { mkdirSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { listSessions, getSessionHistory, findSessionFile } from "./sessions.ts";
 import { deleteSession, forkSession } from "./sessions.ts";
 import { renameSession } from "./sessions.ts";
 import { startTunnel, stopTunnel, getTunnelState } from "./tunnel.ts";
-import { loadModelCatalog } from "./models.ts";
+import { loadModelCatalog, refreshModelCatalog, warmModelCatalog } from "./models.ts";
 import type {
   WsClientCommand,
   WsServerMessage,
@@ -71,6 +72,14 @@ function sendWs(ws: WebSocket, msg: WsServerMessage): void {
   ws.send(JSON.stringify(msg));
 }
 
+/** Tell every connected client that a session has a live omp run (or not). */
+function broadcastSessionActive(sessionId: string, active: boolean): void {
+  if (!sessionId) return;
+  for (const c of connections) {
+    if (c.readyState === 1) sendWs(c, { type: "session_active", sessionId, active });
+  }
+}
+
 async function handleSend(
   ws: WebSocket,
   state: ConnectionState,
@@ -81,6 +90,11 @@ async function handleSend(
   }
 
   let sessionId = cmd.sessionId || "";
+  let announced = false;
+  if (sessionId) {
+    announced = true;
+    broadcastSessionActive(sessionId, true);
+  }
 
   const handle = spawnOmp({
     content: cmd.content,
@@ -95,6 +109,10 @@ async function handleSend(
       if (event.type === "session" && "id" in event && typeof event.id === "string") {
         sessionId = event.id;
         state.currentSessionId = sessionId;
+        if (!announced) {
+          announced = true;
+          broadcastSessionActive(sessionId, true);
+        }
       }
       if (ws.readyState === 1) {
         sendWs(ws, { type: "event", sessionId, event });
@@ -122,6 +140,7 @@ async function handleSend(
     });
   } finally {
     state.ompKill = null;
+    broadcastSessionActive(sessionId || handle.sessionId || "", false);
   }
 }
 
@@ -146,6 +165,7 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
     }
 
     case "get_history": {
+      // (watcher started after the reply below)
       const result = await getSessionHistory(cmd.sessionId);
       if (result) {
         sendWs(ws, {
@@ -157,10 +177,19 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
       } else {
         sendWs(ws, { type: "error", message: `Session not found: ${cmd.sessionId}` });
       }
+      startSessionWatcher(ws, cmd.sessionId, state);
       break;
     }
 
     case "get_status": {
+      const status = await buildStatus();
+      sendWs(ws, { type: "status", status });
+      break;
+    }
+
+    case "refresh_models": {
+      // Explicit catalog refresh (forces the omp CLI call); reply with status.
+      await refreshModelCatalog();
       const status = await buildStatus();
       sendWs(ws, { type: "status", status });
       break;
@@ -238,6 +267,98 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
 
 // ─── HTTP REST API ────────────────────────────────────────────────────────────
 
+// ─── External session sync (2026-09-05) ─────────────────────────────────────
+// Sessions can be live in another omp instance (desktop TUI). The bridge
+// polls the session JSONL and re-pushes history on change so the mobile app
+// mirrors TUI activity in near-real-time (~1s). Skipped while THIS connection
+// drives its own omp process (live events already stream).
+const sessionWatchers = new Map<
+  WebSocket,
+  { sessionId: string; timer: ReturnType<typeof setInterval> | null; lastMtime: number }
+>();
+
+function stopSessionWatcher(ws: WebSocket): void {
+  const w = sessionWatchers.get(ws);
+  if (w?.timer) clearInterval(w.timer);
+  sessionWatchers.delete(ws);
+}
+
+function startSessionWatcher(ws: WebSocket, sessionId: string, state: ConnectionState): void {
+  stopSessionWatcher(ws);
+  const entry = { sessionId, timer: null as ReturnType<typeof setInterval> | null, lastMtime: 0 };
+  sessionWatchers.set(ws, entry);
+  const tick = async () => {
+    if (state.ompKill) return;
+    try {
+      const file = await findSessionFile(sessionId);
+      if (!file) return;
+      const st = statSync(file);
+      if (st.mtimeMs === entry.lastMtime) return;
+      entry.lastMtime = st.mtimeMs;
+      const hist = await getSessionHistory(sessionId);
+      if (!hist || ws.readyState !== WebSocket.OPEN) return;
+      console.log(`[watcher] push ${hist.messages.length} msgs for ${sessionId.slice(0,8)} ext=${Date.now() - st.mtimeMs < 5000}`);
+      const externallyActive = Date.now() - st.mtimeMs < 5000;
+      sendWs(ws, {
+        type: "history",
+        sessionId,
+        messages: hist.messages,
+        title: hist.title,
+        externallyActive,
+      });
+    } catch {
+      // file vanished / unreadable — keep polling
+    }
+  };
+  entry.timer = setInterval(() => void tick(), 900);
+  void tick();
+}
+
+/**
+ * Directory listing for the mobile folder picker.
+ * Empty path = drive roots on Windows (else home). Hidden dirs skipped.
+ */
+function listDirs(p: string): {
+  path: string;
+  parent: string | null;
+  home: string;
+  dirs: { name: string; path: string }[];
+} {
+  const home = homedir();
+  if (!p) {
+    if (process.platform === "win32") {
+      const dirs: { name: string; path: string }[] = [];
+      for (let d = 65; d <= 90; d++) {
+        const root = String.fromCharCode(d) + ":\\";
+        try {
+          if (statSync(root).isDirectory()) dirs.push({ name: root, path: root });
+        } catch {
+          // drive absent
+        }
+      }
+      return { path: "", parent: null, home, dirs };
+    }
+    p = home;
+  }
+  const abs = resolve(p);
+  let dirs: { name: string; path: string }[] = [];
+  try {
+    dirs = readdirSync(abs, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => ({ name: e.name, path: join(abs, e.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  } catch {
+    // unreadable dir → empty list
+  }
+  const parent = dirname(abs);
+  return {
+    path: abs,
+    parent: parent === abs ? null : parent,
+    home,
+    dirs,
+  };
+}
+
 async function handleRest(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
@@ -260,6 +381,32 @@ async function handleRest(req: Request): Promise<Response> {
     return new Response(JSON.stringify(sessions), {
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // Folder picker backend (2026-09-05): list directories + create folders so
+  // the mobile app gets a real navigator instead of a text input.
+  if (url.pathname === "/api/fs" && req.method === "GET") {
+    const p = url.searchParams.get("path") || "";
+    return new Response(JSON.stringify(listDirs(p)), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (url.pathname === "/api/fs/mkdir" && req.method === "POST") {
+    const body = (await req.json().catch(() => ({}))) as { path?: string };
+    const target = body.path || "";
+    try {
+      if (!target || !isAbsolute(target)) throw new Error("bad path");
+      mkdirSync(target, { recursive: true });
+      return new Response(JSON.stringify(listDirs(dirname(target))), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }
 
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]+)$/);
@@ -342,6 +489,7 @@ const server = Bun.serve({
       if (state?.ompKill) {
         state.ompKill();
       }
+      stopSessionWatcher(ws);
       connections.delete(ws);
       console.log(`[ws] client disconnected (${connections.size} total)`);
     },
@@ -387,3 +535,5 @@ void startTunnel(PORT).then((state) => {
 // Warm the session header cache at boot so the first drawer open is instant
 // (otherwise the first list_sessions parses ~600 JSONL files cold, ~2s).
 void listSessions().then((s) => console.log(`[sessions] cache warmed: ${s.length}`));
+// Warm the omp model catalog (CLI call is slow; first status must be instant).
+warmModelCatalog();

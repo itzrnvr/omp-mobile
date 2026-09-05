@@ -156,6 +156,7 @@ export function MessageList({
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const prevMsgCount = useRef(0);
   const [liveOpen, setLiveOpen] = useState(true);
   const { currentSessionId, forkSession } = useStore();
   const { liveSteps } = useStore();
@@ -166,9 +167,20 @@ export function MessageList({
     if (newId) openChat(newId);
   };
 
+  // Big jump = history load: land at the bottom INSTANTLY. Animated
+  // scrollToEnd on a long list stalls mid-way (the "click it multiple
+  // times" bug, 2026-09-05). Small deltas = live turn: smooth scroll.
   useEffect(() => {
+    const delta = messages.length - prevMsgCount.current;
+    prevMsgCount.current = messages.length;
+    if (delta > 1 && !isGenerating) {
+      const id = setTimeout(() => {
+        listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
+      }, 60);
+      return () => clearTimeout(id);
+    }
     listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length, streamingText, streamingThinking, toolCalls?.length, notices?.length]);
+  }, [messages.length, streamingText, streamingThinking, toolCalls?.length, notices?.length, isGenerating]);
 
   // Reference: keep pinned to bottom every 250ms while a turn is working.
   useEffect(() => {
@@ -264,7 +276,20 @@ export function MessageList({
                 steps={liveSteps as TraceStep[]}
                 isStreaming
                 open={liveOpen}
-                onToggle={() => setLiveOpen((o) => !o)}
+                onToggle={() => {
+                  setLiveOpen((o) => !o);
+                  // Layout settles a tick later; jump to bottom without
+                  // animation so collapsed content never peeks under the
+                  // composer while the IME padding is active (2026-09-05).
+                  setTimeout(
+                    () =>
+                      listRef.current?.scrollToOffset({
+                        offset: Number.MAX_SAFE_INTEGER,
+                        animated: false,
+                      }),
+                    60,
+                  );
+                }}
               />
               {streamingText && liveOpen ? (
                 <View style={styles.answerWrap}>
@@ -278,7 +303,9 @@ export function MessageList({
       {showScrollButton && (
         <Pressable
           style={styles.scrollButton}
-          onPress={() => listRef.current?.scrollToEnd({ animated: true })}
+          onPress={() =>
+            listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false })
+          }
         >
           <Icon name="chevron-down" size={18} color={colors.text} />
         </Pressable>

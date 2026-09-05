@@ -164,6 +164,7 @@ export type WsClientCommand =
   | { type: 'list_sessions' }
   | { type: 'get_history'; sessionId: string }
   | { type: 'get_status' }
+  | { type: 'refresh_models' }
   | { type: 'fork_session'; sessionId: string; messageCount: number }
   | { type: 'delete_session'; sessionId: string }
   | { type: 'rename_session'; sessionId: string; title: string }
@@ -177,13 +178,21 @@ export type WsServerMessage =
   | { type: 'complete'; sessionId: string }
   | { type: 'error'; message: string; sessionId?: string }
   | { type: 'sessions'; sessions: SessionSummary[] }
-  | { type: 'history'; sessionId: string; messages: OmpMessage[]; title?: string }
+  | {
+    type: 'history';
+    sessionId: string;
+    messages: OmpMessage[];
+    title?: string;
+    /** Session file is being written by another omp instance right now. */
+    externallyActive?: boolean;
+  }
   | { type: 'status'; status: ServerStatus }
   | { type: 'tunnel'; url: string | null; status: string }
   | { type: 'forked'; sessionId: string; sessions: SessionSummary[] }
   | { type: 'deleted'; sessionId: string; sessions: SessionSummary[] }
   | { type: 'renamed'; sessionId: string; sessions: SessionSummary[] }
-  | { type: 'uploaded'; path: string };
+  | { type: 'uploaded'; path: string }
+  | { type: 'session_active'; sessionId: string; active: boolean };
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 

@@ -28,6 +28,8 @@ export interface ChatInputProps {
   onChangeText: (text: string) => void;
   onSend: () => void;
   onCancel?: () => void;
+  steerQueue?: string[];
+  onRemoveSteer?: (index: number) => void;
   isGenerating?: boolean;
   placeholder?: string;
   bottomInset?: number;
@@ -46,6 +48,8 @@ export function ChatInput({
   onSend,
   onCancel,
   isGenerating,
+  steerQueue,
+  onRemoveSteer,
   placeholder = "Ask for follow-up changes",
   bottomInset = 0,
   modelLabel,
@@ -60,7 +64,7 @@ export function ChatInput({
   const { attachments, clearAttachments, lastUsage } = useStore();
   const { selectedModel, serverStatus } = useStore();
 
-  const canSend = value.trim().length > 0 && !isGenerating;
+  const canSend = value.trim().length > 0;
   const offset = cardH + spacing.md + bottomInset + 14;
 
   const onTranscript = (text: string) => {
@@ -80,6 +84,20 @@ export function ChatInput({
 
   return (
     <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
+      {steerQueue && steerQueue.length > 0 && (
+        <View style={styles.queueWrap}>
+          {steerQueue.map((q, i) => (
+            <View key={i} style={styles.queueChip}>
+              <RNText style={styles.queueText} numberOfLines={1}>
+                Queued: {q}
+              </RNText>
+              <Pressable onPress={() => onRemoveSteer && onRemoveSteer(i)}>
+                <Icon name="close" size={12} color="#8e8e8e" />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
       <View style={styles.card} onLayout={(e) => setCardH(e.nativeEvent.layout.height)}>
         {attachments.length > 0 && (
           <View style={styles.chips}>
@@ -110,9 +128,13 @@ export function ChatInput({
             <Icon name="add" size={24} color="#a3a3a3" />
           </Pressable>
           {isGenerating && (
-            <View style={styles.activity}>
-              <Icon name="activity" size={16} color="#a3a3a3" />
-            </View>
+            <Pressable
+              style={styles.stopInline}
+              onPress={onCancel}
+              accessibilityLabel="Stop"
+            >
+              <Icon name="stop" size={13} color="#ff8a8a" />
+            </Pressable>
           )}
           <Pressable
             onPress={() => setPanel(panel === "ctx" ? null : "ctx")}
@@ -120,11 +142,11 @@ export function ChatInput({
           >
             <View style={styles.ctxButton}>
               <ContextRing pct={ctxPct} size={16} />
-              {ctxLabel ? <RNText style={styles.ctxText}>{ctxLabel}</RNText> : null}
+              {ctxLabel && !isGenerating ? <RNText style={styles.ctxText}>{ctxLabel}</RNText> : null}
             </View>
           </Pressable>
           <View style={styles.spacer} />
-          <Pressable style={styles.modelButton} onPress={onOpenModel} accessibilityLabel="Model">
+          <Pressable style={[styles.modelButton, isGenerating && styles.modelButtonTight]} onPress={onOpenModel} accessibilityLabel="Model">
             <RNText style={styles.modelLabel} numberOfLines={1}>
               {modelLabel}
             </RNText>
@@ -137,24 +159,14 @@ export function ChatInput({
           >
             <Icon name="mic" size={22} color="#a3a3a3" />
           </Pressable>
-          {isGenerating ? (
-            <Pressable
-              style={[styles.send, styles.sendStop]}
-              onPress={onCancel}
-              accessibilityLabel="Stop"
-            >
-              <Icon name="stop" size={16} color="#ffffff" />
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.send, canSend && styles.sendReady]}
-              onPress={onSend}
-              disabled={!canSend}
-              accessibilityLabel="Send"
-            >
-              <Icon name="send" size={19} color="#171717" />
-            </Pressable>
-          )}
+          <Pressable
+            style={[styles.send, canSend && styles.sendReady]}
+            onPress={onSend}
+            disabled={!canSend}
+            accessibilityLabel="Send"
+          >
+            <Icon name="send" size={19} color="#171717" />
+          </Pressable>
         </View>
       </View>
 
@@ -230,6 +242,7 @@ const styles = StyleSheet.create({
   ctxText: { fontFamily: "monospace", fontSize: 12, color: "#9b9b9b" },
   spacer: { flex: 1 },
   modelButton: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 150 },
+  modelButtonTight: { maxWidth: 104 },
   modelLabel: { fontSize: 17, fontWeight: "500", color: "#ececec" },
   micButton: { alignItems: "center", justifyContent: "center" },
   send: {
@@ -241,5 +254,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendReady: { backgroundColor: "#f2f2f2" },
+  stopInline: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#2d2d2d", alignItems: "center", justifyContent: "center" },
+  queueWrap: { paddingBottom: spacing.xs, gap: 4 },
+  queueChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#242424", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start" },
+  queueText: { fontSize: 12, color: "#9ccafa", maxWidth: 220 },
   sendStop: { backgroundColor: colors.error },
 });

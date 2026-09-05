@@ -253,6 +253,12 @@ export interface WsUploadedMessage {
   path: string;
 }
 
+export interface WsSessionActiveMessage {
+  type: "session_active";
+  sessionId: string;
+  active: boolean;
+}
+
 export interface WsTunnelMessage {
   type: "tunnel";
   url: string | null;
@@ -268,7 +274,8 @@ export type WsServerMessage =
   | WsStatusMessage
   | WsTunnelMessage
   | WsSessionMutatedMessage
-  | WsUploadedMessage;
+  | WsUploadedMessage
+  | WsSessionActiveMessage;
 
 // ─── Session Models ───────────────────────────────────────────────────────────
 

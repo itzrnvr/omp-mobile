@@ -1,14 +1,19 @@
 /*
  * PURPOSE: Left drawer (reference): backdrop fade + slide-in; brand row
- * (sparkle + name) + X; "New chat" button (#2a2a2a r12); RECENTS label;
- * search input; VIRTUALIZED session rows (title + 52-char preview, active
- * #2c2c2c, long-press → SessionActionSheet); footer row opens Settings sheet.
+ * (sparkle + name) + X; "New chat" button (#2a2a2a r12); search input;
+ * session list = RECENTS (top 8, newest first, across folders) followed by
+ * COLLAPSIBLE PER-FOLDER groups (user requirement 2026-09-05: "sessions
+ * grouped by folders collapsible and recent sessions at top"). While a search
+ * query is active the list flattens to matching rows.
  *
- * PERF NOTE (2026-09-05): the list was a ScrollView mapping ALL sessions
- * (~600 rows) which made the drawer take ~1s to appear. FlatList with
- * initialNumToRender/windowSize fixed the open delay.
- * TOUCH NOTE: returns null when hidden — an always-mounted opacity-0 backdrop
- * Pressable swallows every touch on screen.
+ * Rows: title + 52-char preview, active #2c2c2c, long-press → action sheet,
+ * and a blue pulsing dot when the session has a live omp run (server
+ * broadcasts session_active; user requirement: active indicators in list).
+ *
+ * PERF NOTE: single virtualized FlatList over a heterogeneous item array
+ * (headers + rows); ~600 sessions never mount at once.
+ * TOUCH NOTE (2026-09-05): subtree stays MOUNTED always (instant open);
+ * pointerEvents gating prevents the hidden backdrop from swallowing touches.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -19,6 +24,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  LayoutAnimation,
   Text as RNText,
   Dimensions,
 } from "react-native";
@@ -32,11 +38,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const WIDTH = Math.min(Dimensions.get("window").width * 0.82, 340);
 const SLIDE_EASING = Easing.bezier(0.32, 0.72, 0.25, 1);
+const RECENT_COUNT = 8;
 
 function preview(s: SessionSummary): string {
   const t = s.title || "No messages yet";
   return t.length > 52 ? t.slice(0, 52) + "…" : t;
 }
+
+function dirName(cwd?: string): string {
+  if (!cwd) return "unknown";
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || cwd;
+}
+
+type Item =
+  | { k: "rhead" }
+  | { k: "rec"; s: SessionSummary }
+  | { k: "ghead"; dir: string; count: number }
+  | { k: "row"; s: SessionSummary };
 
 export interface DrawerProps {
   visible: boolean;
@@ -48,11 +67,13 @@ export interface DrawerProps {
 
 export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSettings }: DrawerProps) {
   const insets = useSafeAreaInsets();
-  const { sessions, refreshSessions, currentSessionId } = useStore();
+  const { sessions, refreshSessions, currentSessionId, activeSessionIds } = useStore();
   const [query, setQuery] = useState("");
+  const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
   const [actionSession, setActionSession] = useState<SessionSummary | null>(null);
   const slide = useRef(new Animated.Value(1)).current;
   const fade = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) refreshSessions();
@@ -71,6 +92,18 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
     ]).start();
   }, [visible, slide, fade, refreshSessions]);
 
+  // Shared pulse for every "running" dot (one driver, many listeners).
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.25, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
   const q = query.trim().toLowerCase();
   const filtered = q
     ? sessions.filter(
@@ -79,10 +112,68 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
       )
     : sessions;
 
-  // TOUCH NOTE (2026-09-05): the subtree stays MOUNTED at all times so opening
-  // is instant (no remount of the list). Touch safety comes from pointerEvents:
-  // hidden => root swallows nothing ("none"); visible => box-none plus the
-  // backdrop Pressable (mounted only while visible) closes on tap.
+  // Folder groups ordered by their newest session; current folder open by default.
+  const currentDir = sessions.find((s) => s.id === currentSessionId)?.cwd || "";
+  const groups: { dir: string; items: SessionSummary[] }[] = [];
+  for (const s of filtered) {
+    const d = s.cwd || "";
+    let g = groups.find((x) => x.dir === d);
+    if (!g) {
+      g = { dir: d, items: [] };
+      groups.push(g);
+    }
+    g.items.push(s);
+  }
+
+  const items: Item[] = [];
+  if (q) {
+    for (const s of filtered) items.push({ k: "row", s });
+  } else {
+    if (filtered.length > 0) {
+      items.push({ k: "rhead" });
+      for (const s of filtered.slice(0, RECENT_COUNT)) items.push({ k: "rec", s });
+    }
+    for (const g of groups) {
+      items.push({ k: "ghead", dir: g.dir, count: g.items.length });
+      const open = openDirs[g.dir] ?? g.dir === currentDir;
+      if (open) for (const s of g.items) items.push({ k: "row", s });
+    }
+  }
+
+  const toggleDir = (dir: string) => {
+    LayoutAnimation.easeInEaseOut();
+    setOpenDirs((prev) => {
+      const cur = prev[dir] ?? dir === currentDir;
+      return { ...prev, [dir]: !cur };
+    });
+  };
+
+  const renderRow = (s: SessionSummary) => {
+    const active = !!activeSessionIds[s.id];
+    return (
+      <Pressable
+        style={[styles.item, s.id === currentSessionId && styles.itemActive]}
+        onPress={() => {
+          onOpenSession(s.id);
+          onClose();
+        }}
+        onLongPress={() => setActionSession(s)}
+      >
+        <View style={styles.itemTitleRow}>
+          {active ? (
+            <Animated.View style={[styles.liveDot, { opacity: pulse }]} />
+          ) : null}
+          <RNText style={styles.itemTitle} numberOfLines={1}>
+            {s.title || "Untitled"}
+          </RNText>
+        </View>
+        <RNText style={styles.itemPreview} numberOfLines={1}>
+          {preview(s)}
+        </RNText>
+      </Pressable>
+    );
+  };
+
   return (
     <View style={styles.root} pointerEvents={visible ? "box-none" : "none"}>
       <Animated.View style={[styles.backdrop, { opacity: fade }]}>
@@ -93,8 +184,7 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
           styles.panel,
           {
             paddingTop: Math.max(insets.top, spacing.md),
-            // keep the "Settings & server" footer clear of the gesture bar
-            // on tablets/phones with inset nav (2026-09-05 tablet capture)
+            // keep the footer clear of the gesture bar on inset nav devices
             paddingBottom: Math.max(insets.bottom, spacing.md),
             transform: [
               {
@@ -122,7 +212,6 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
           <RNText style={styles.newChatText}>New chat</RNText>
         </Pressable>
 
-        <RNText style={styles.label}>RECENTS</RNText>
         <View style={styles.searchWrap}>
           <Icon name="search" size={15} color="#8e8e8e" />
           <View style={styles.searchInput}>
@@ -138,30 +227,39 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
 
         <FlatList
           style={styles.list}
-          data={filtered}
-          keyExtractor={(s) => s.id}
-          initialNumToRender={12}
-          maxToRenderPerBatch={20}
+          data={items}
+          keyExtractor={(it, i) =>
+            it.k === "ghead" ? "g:" + it.dir : it.k === "rhead" ? "rhead" : i + ":" + it.s.id
+          }
+          initialNumToRender={14}
+          maxToRenderPerBatch={24}
           windowSize={7}
           removeClippedSubviews
           bounces={false}
-          renderItem={({ item: s }) => (
-            <Pressable
-              style={[styles.item, s.id === currentSessionId && styles.itemActive]}
-              onPress={() => {
-                onOpenSession(s.id);
-                onClose();
-              }}
-              onLongPress={() => setActionSession(s)}
-            >
-              <RNText style={styles.itemTitle} numberOfLines={1}>
-                {s.title || "Untitled"}
-              </RNText>
-              <RNText style={styles.itemPreview} numberOfLines={1}>
-                {preview(s)}
-              </RNText>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            if (item.k === "rhead") {
+              return <RNText style={styles.label}>RECENTS</RNText>;
+            }
+            if (item.k === "rec") return renderRow(item.s);
+            if (item.k === "ghead") {
+              const open = openDirs[item.dir] ?? item.dir === currentDir;
+              return (
+                <Pressable style={styles.groupHead} onPress={() => toggleDir(item.dir)}>
+                  <Icon name="folder" size={15} color="#8e8e8e" />
+                  <RNText style={styles.groupName} numberOfLines={1}>
+                    {dirName(item.dir)}
+                  </RNText>
+                  <RNText style={styles.groupCount}>{item.count}</RNText>
+                  <Icon
+                    name={open ? "chevron-up" : "chevron-down"}
+                    size={13}
+                    color="#6f6f6f"
+                  />
+                </Pressable>
+              );
+            }
+            return renderRow(item.s);
+          }}
         />
 
         <Pressable style={styles.footerRow} onPress={onOpenSettings}>
@@ -215,7 +313,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.9,
     color: "#6f6f6f",
     paddingHorizontal: spacing.xs,
-    paddingBottom: spacing.xs,
+    paddingVertical: spacing.xs,
   },
   searchWrap: {
     flexDirection: "row",
@@ -229,6 +327,16 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1 },
   list: { flex: 1 },
+  groupHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.xs,
+    marginTop: 4,
+  },
+  groupName: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  groupCount: { fontSize: 11, color: "#6f6f6f" },
   item: {
     paddingVertical: 10,
     paddingHorizontal: spacing.sm,
@@ -236,16 +344,23 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   itemActive: { backgroundColor: "#2c2c2c" },
-  itemTitle: { fontSize: 14, fontWeight: "500", color: colors.text },
+  itemTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.link,
+  },
+  itemTitle: { flex: 1, fontSize: 14, fontWeight: "500", color: colors.text },
   itemPreview: { fontSize: 12, color: "#8a8a8a", marginTop: 2 },
   footerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: "#2a2a2a",
+    paddingHorizontal: spacing.xs,
   },
   footerText: { fontSize: 14, color: colors.textSecondary },
 });

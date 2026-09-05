@@ -11,7 +11,14 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Pressable, BackHandler, ScrollView } from "react-native";
+import { Keyboard } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  BackHandler,
+  ScrollView,
+} from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -36,6 +43,20 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Manual IME padding: KAV on RN 0.79 edge-to-edge is unreliable (composer
+  // stuck up after hide, glue behind composer). keyboardDidShow/Hide gives
+  // exact heights both ways (2026-09-05).
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) =>
+      setKbHeight(e.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const {
     messages,
@@ -46,7 +67,12 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     cancelGeneration,
     loadSession,
     startNewSession,
+    restoreOrNew,
+    steerQueue,
+    removeSteer,
+    externalActive,
     selectedModel,
+    thinkingLevel,
     selectedCwd,
     toolCalls,
     notices,
@@ -61,7 +87,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
 
   useEffect(() => {
     if (sessionId) loadSession(sessionId);
-    else startNewSession();
+    else restoreOrNew();
   }, [sessionId]);
 
   // Hardware back closes overlays before exiting.
@@ -142,6 +168,15 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         </Pressable>
       </View>
 
+      {externalActive ? (
+        <View style={styles.syncBanner}>
+          <Icon name="activity" size={13} color="#9ccafa" />
+          <Text size="xs" color="textSecondary">
+            Live in omp TUI — syncing in real time
+          </Text>
+        </View>
+      ) : null}
+
       <MessageList
         messages={messages}
         streamingText={streamingText}
@@ -157,8 +192,10 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onSend={handleSend}
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
-        bottomInset={insets.bottom}
-        modelLabel={modelLabel}
+        steerQueue={steerQueue}
+        onRemoveSteer={removeSteer}
+        bottomInset={kbHeight > 0 ? kbHeight : insets.bottom}
+        modelLabel={modelLabel + " · " + thinkingLevel}
         onOpenModel={() => setSheetOpen(true)}
         onAttachFiles={() => void onAttachFiles()}
         onTakePhoto={() => void onTakePhoto()}
@@ -189,6 +226,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
 }
 
 const styles = StyleSheet.create({
+  syncBanner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d2733" },
   container: { flex: 1, backgroundColor: colors.bg },
   disconnected: {
     flex: 1,

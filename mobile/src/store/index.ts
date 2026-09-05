@@ -26,6 +26,8 @@ const KEY_THINKING = 'omp.thinking';
 
 const KEY_CWD = 'omp.cwd';
 const KEY_RECENT = 'omp.recentModels';
+/** Last open session id — restored after process death / activity recreate. */
+const KEY_LAST_SESSION = 'omp.lastSession';
 
 let wsService: WebSocketService | null = null;
 /** Resolves the pending forkSession() promise when the server replies 'forked'. */
@@ -84,8 +86,20 @@ interface StoreState {
   sessions: SessionSummary[];
   loadingSessions: boolean;
   refreshSessions: () => void;
+  /** Messages queued while a turn is running (steering, omp TUI style). */
+  steerQueue: string[];
+  removeSteer: (index: number) => void;
+  /** Session id awaiting restore after relaunch (set by restoreOrNew). */
+  pendingRestoreId: string | null;
+  /** True while the open session is live in another omp instance (TUI). */
+  externalActive: boolean;
+  /** sessionId -> live omp run in progress (server broadcasts). */
+  activeSessionIds: Record<string, boolean>;
   /** Re-request server status (model catalog, tunnel, counts) over WS. */
   refreshStatus: () => void;
+  refreshCatalog: () => void;
+  /** On mount: replay last session if persisted, else start fresh. */
+  restoreOrNew: () => void;
   deleteSession: (sessionId: string) => void;
   /** Fork a session up to messageCount messages; resolves with the new session id. */
   forkSession: (sessionId: string, messageCount: number) => Promise<string | null>;
@@ -123,7 +137,12 @@ export const useStore = create<StoreState>((set, get) => {
   const processEvent = (event: OmpEvent, sessionId: string): void => {
     switch (event.type) {
       case 'session': {
-        if (sessionId) set({ currentSessionId: sessionId });
+        if (sessionId && sessionId !== get().currentSessionId) {
+          set({ currentSessionId: sessionId });
+          // Persist so relaunch restores whichever session was live,
+          // not only ones opened from the drawer (2026-09-05).
+          AsyncStorage.setItem(KEY_LAST_SESSION, sessionId).catch(() => {});
+        }
         break;
       }
       case 'agent_start': {
@@ -312,6 +331,12 @@ export const useStore = create<StoreState>((set, get) => {
             streamingThinking: '',
             isGenerating: false,
           }));
+          // Steering: auto-send the next queued message once idle.
+          const next = get().steerQueue[0];
+          if (next) {
+            set((s) => ({ steerQueue: s.steerQueue.slice(1) }));
+            setTimeout(() => get().sendMessage(next), 50);
+          }
         }
         break;
       }
@@ -375,6 +400,10 @@ export const useStore = create<StoreState>((set, get) => {
     token: '',
     wsStatus: 'disconnected',
     serverStatus: null,
+    pendingRestoreId: null,
+    steerQueue: [],
+    externalActive: false,
+    activeSessionIds: {},
     tunnelUrl: null,
     tunnelStatus: null,
 
@@ -393,6 +422,13 @@ export const useStore = create<StoreState>((set, get) => {
         if (status === 'connected') {
           get().refreshSessions();
           wsService?.send({ type: 'get_status' });
+          // Restore the session open before process death / recreation.
+          const rid = get().pendingRestoreId;
+          if (rid && !get().currentSessionId) {
+            set({ pendingRestoreId: null });
+            console.log("[restore] sending get_history", rid);
+            wsService?.send({ type: 'get_history', sessionId: rid });
+          }
         }
       };
       wsService.connect(serverUrl, token);
@@ -446,6 +482,11 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     sendMessage: (content, opts) => {
+    // omp -p needs EOF per turn: steering = queue + auto-send on commit.
+    if (get().isGenerating) {
+      set((s) => ({ steerQueue: [...s.steerQueue, content] }));
+      return;
+    }
       if (!wsService) return;
       const state = get();
       const model = opts?.model ?? state.selectedModel ?? state.currentModel ?? undefined;
@@ -494,11 +535,14 @@ export const useStore = create<StoreState>((set, get) => {
         notices: [],
         sessionTitle: null,
       });
+      AsyncStorage.setItem(KEY_LAST_SESSION, sessionId).catch(() => {});
       wsService?.send({ type: 'get_history', sessionId });
     },
 
     startNewSession: () => {
+      AsyncStorage.removeItem(KEY_LAST_SESSION).catch(() => {});
       set({
+        pendingRestoreId: null,
         currentSessionId: null,
         messages: [],
         streamingText: '',
@@ -527,6 +571,12 @@ export const useStore = create<StoreState>((set, get) => {
             streamingThinking: '',
             isGenerating: false,
           }));
+          // Steering: auto-send the next queued message once idle.
+          const next = get().steerQueue[0];
+          if (next) {
+            set((s) => ({ steerQueue: s.steerQueue.slice(1) }));
+            setTimeout(() => get().sendMessage(next), 50);
+          }
           break;
         }
         case 'sessions':
@@ -543,10 +593,25 @@ export const useStore = create<StoreState>((set, get) => {
         case 'renamed':
           set({ sessions: msg.sessions, loadingSessions: false });
           break;
+        case 'session_active':
+          set((s) => {
+            const next = { ...s.activeSessionIds };
+            if (msg.active) next[msg.sessionId] = true;
+            else delete next[msg.sessionId];
+            return { activeSessionIds: next };
+          });
+          break;
         case 'uploaded':
           set((s) => ({ attachments: [...s.attachments, msg.path] }));
           break;
-        case 'history':
+        case 'history': {
+          // Preselect the model omp actually ran this session with, so the
+          // picker check + composer chip match reality (2026-09-05).
+          let activeModel: string | null = null;
+          for (let i = msg.messages.length - 1; i >= 0; i--) {
+            const m = msg.messages[i];
+            if (m.role === 'assistant' && m.model) { activeModel = m.model; break; }
+          }
           set({
             currentSessionId: msg.sessionId,
             messages: msg.messages,
@@ -554,8 +619,11 @@ export const useStore = create<StoreState>((set, get) => {
             streamingThinking: '',
             isGenerating: false,
             sessionTitle: msg.title || null,
+            ...(activeModel ? { selectedModel: activeModel } : {}),
           });
+          if (activeModel) AsyncStorage.setItem(KEY_MODEL, activeModel).catch(() => {});
           break;
+        }
         case 'status':
           set({
             serverStatus: msg.status,
@@ -577,8 +645,35 @@ export const useStore = create<StoreState>((set, get) => {
       wsService?.send({ type: 'list_sessions' });
     },
 
+    removeSteer: (index) => {
+      set((s) => ({ steerQueue: s.steerQueue.filter((_, i) => i !== index) }));
+    },
+
     refreshStatus: () => {
       wsService?.send({ type: 'get_status' });
+    },
+
+    /** Force the server to re-run `omp models ls` (slow); replies with status. */
+    refreshCatalog: () => {
+      wsService?.send({ type: 'refresh_models' });
+    },
+
+    restoreOrNew: () => {
+      // Child effects run BEFORE App's bootstrap effect, so the restore
+      // decision must live here, not in connect() (2026-09-05 race fix #2).
+      AsyncStorage.getItem(KEY_LAST_SESSION)
+        .then((last) => {
+          if (!last) {
+            get().startNewSession();
+            return;
+          }
+          if (get().wsStatus === 'connected') {
+            get().loadSession(last);
+          } else {
+            set({ pendingRestoreId: last });
+          }
+        })
+        .catch(() => get().startNewSession());
     },
 
     deleteSession: (sessionId) => {
