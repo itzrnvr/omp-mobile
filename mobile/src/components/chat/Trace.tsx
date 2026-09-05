@@ -38,7 +38,7 @@ import { colors, spacing } from "../../theme";
 import { Icon } from "../ui/Icon";
 
 export interface TraceStep {
-  kind: "reasoning" | "tool";
+  kind: "reasoning" | "tool" | "text";
   text?: string;
   name?: string;
   args?: string;
@@ -54,6 +54,8 @@ export interface TraceProps {
   durationMs?: number;
   isStreaming?: boolean;
   /** Controlled open state (live working group); omit for self-managed. */
+  /** Start expanded (history turns whose only content is steps). */
+  defaultOpen?: boolean;
   open?: boolean;
   onToggle?: () => void;
 }
@@ -183,8 +185,15 @@ function ToolStep({ step }: { step: TraceStep }) {
   );
 }
 
-export function Trace({ steps, durationMs, isStreaming, open, onToggle }: TraceProps) {
-  const [internalOpen, setInternalOpen] = useState(!!isStreaming);
+export function Trace({
+  steps,
+  durationMs,
+  isStreaming,
+  open,
+  onToggle,
+  defaultOpen,
+}: TraceProps) {
+  const [internalOpen, setInternalOpen] = useState(!!isStreaming || !!defaultOpen);
   const [secs, setSecs] = useState(0);
   const controlled = open !== undefined;
   const expanded = controlled ? !!open : internalOpen;
@@ -243,7 +252,13 @@ export function Trace({ steps, durationMs, isStreaming, open, onToggle }: TraceP
                 <View style={[styles.entry, last && styles.entryLast]}>
                   <View style={styles.node}>
                     <Icon
-                      name={step.kind === "reasoning" ? "sparkle" : "wrench"}
+                      name={
+                        step.kind === "reasoning"
+                          ? "sparkle"
+                          : step.kind === "text"
+                            ? "chat-outline"
+                            : "wrench"
+                      }
                       size={11}
                       color="#8e8e8e"
                     />
@@ -255,6 +270,11 @@ export function Trace({ steps, durationMs, isStreaming, open, onToggle }: TraceP
                         <RNText style={styles.traceLabel}>
                           {"Reasoning" + (step.dur ? " · " + step.dur : "")}
                         </RNText>
+                        <RNText style={styles.traceText}>{step.text}</RNText>
+                      </>
+                    ) : step.kind === "text" ? (
+                      <>
+                        <RNText style={styles.traceLabel}>Response</RNText>
                         <RNText style={styles.traceText}>{step.text}</RNText>
                       </>
                     ) : (

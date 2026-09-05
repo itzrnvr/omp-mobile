@@ -55,6 +55,7 @@ export interface SessionSummary {
   cwd?: string;
   messageCount: number;
   size: number;
+  mtimeMs?: number;
 }
 
 export interface ServerStatus {
@@ -185,6 +186,9 @@ export type WsServerMessage =
     title?: string;
     /** Session file is being written by another omp instance right now. */
     externallyActive?: boolean;
+    /** History was capped for mobile (big sessions). */
+    truncated?: boolean;
+    totalCount?: number;
   }
   | { type: 'ext_event'; sessionId: string; event: OmpEvent }
   | { type: 'ext_session'; sessionId: string | null; active: boolean }
@@ -200,7 +204,7 @@ export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 
 /** One step of the in-flight chain-of-thought (reasoning or tool call). */
 export interface LiveStep {
-  kind: 'reasoning' | 'tool';
+  kind: 'reasoning' | 'tool' | 'text';
   text?: string;
   name?: string;
   args?: string;

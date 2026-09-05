@@ -20,7 +20,7 @@ import { spawnOmp, getOmpVersion } from "./omp.ts";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { mkdirSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { listSessions, getSessionHistory, findSessionFile } from "./sessions.ts";
+import { listSessions, getSessionHistory, getMobileHistory, findSessionFile } from "./sessions.ts";
 import { deleteSession, forkSession } from "./sessions.ts";
 import { renameSession } from "./sessions.ts";
 import { startTunnel, stopTunnel, getTunnelState } from "./tunnel.ts";
@@ -85,15 +85,20 @@ async function handleSend(
   state: ConnectionState,
   cmd: { content: string; sessionId?: string | null; model?: string; thinking?: string; autoApprove?: boolean; cwd?: string },
 ): Promise<void> {
-  // KV-CACHE SAFETY: one writer per session. If the TUI (extension) is mid-turn
-  // for this session, spawning a second omp --resume here would diverge the
-  // prompt prefix and wreck the provider KV/prefix cache lineage. Refuse; the
-  // client offers fork/wait.
-  if (extOwns(cmd.sessionId) || extIsRunning(cmd.sessionId)) {
+  // KV-CACHE SAFETY + true steering: if the TUI (extension) owns this session,
+  // NEVER spawn a second omp --resume (divergent prefix wrecks the provider
+  // KV/prefix cache lineage). Route the send INTO the running TUI turn as a
+  // steering message — same semantics as typing in the TUI while it answers.
+  // TUI-owned session: the extension API cannot inject user messages into a
+  // running TUI (sendUserMessage is a no-op outside hook context — verified
+  // 2026-09-05 via WS-callback AND agent_end-hook attempts). Spawning a
+  // second omp here would branch the session tree and wreck KV lineage, so
+  // refuse loudly; the app toasts and offers fork. TUI->app stays fully live.
+  if (extOwnerWs(cmd.sessionId)) {
     sendWs(ws, {
       type: 'error',
       message:
-        'This session is open in the omp TUI, which is the single writer (KV-cache safety). Mobile sends are blocked — fork it from the drawer to continue on mobile.',
+        'Live in the omp TUI right now — it is the single writer for this session. Reply there, or fork it here to branch safely.',
     });
     return;
   }
@@ -162,13 +167,20 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
       await handleSend(ws, state, cmd);
       break;
 
-    case "cancel":
+    case "cancel": {
+      const cancelOwner = extOwnerWs(state.currentSessionId);
+      if (cancelOwner) {
+        sendWs(cancelOwner, { type: 'ext_abort' });
+        sendWs(ws, { type: 'error', message: 'Abort forwarded to the omp TUI' });
+        break;
+      }
       if (state.ompKill) {
         state.ompKill();
         state.ompKill = null;
         sendWs(ws, { type: "error", message: "Cancelled by user" });
       }
       break;
+    }
 
     case "list_sessions": {
       const sessions: SessionSummary[] = await listSessions();
@@ -178,13 +190,15 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
 
     case "get_history": {
       // (watcher started after the reply below)
-      const result = await getSessionHistory(cmd.sessionId);
+      const result = await getMobileHistory(cmd.sessionId);
       if (result) {
         sendWs(ws, {
           type: "history",
           sessionId: cmd.sessionId,
           messages: result.messages,
           title: result.title,
+          truncated: result.truncated,
+          totalCount: result.totalCount,
         });
       } else {
         sendWs(ws, { type: "error", message: `Session not found: ${cmd.sessionId}` });
@@ -312,6 +326,12 @@ function extOwns(sessionId: string | null | undefined): boolean {
   return false;
 }
 
+function extOwnerWs(sessionId: string | null | undefined): WebSocket | null {
+  if (!sessionId) return null;
+  for (const [ws, c] of extConns) if (c.sessionId === sessionId) return ws;
+  return null;
+}
+
 function extRecentlyActive(sessionId: string | null | undefined, ms = 2000): boolean {
   if (!sessionId) return false;
   const at = extLastEvent.get(sessionId);
@@ -377,7 +397,7 @@ function startSessionWatcher(ws: WebSocket, sessionId: string, state: Connection
       const st = statSync(file);
       if (st.mtimeMs === entry.lastMtime) return;
       entry.lastMtime = st.mtimeMs;
-      const hist = await getSessionHistory(sessionId);
+      const hist = await getMobileHistory(sessionId);
       if (!hist || ws.readyState !== WebSocket.OPEN) return;
       console.log(`[watcher] push ${hist.messages.length} msgs for ${sessionId.slice(0,8)} ext=${Date.now() - st.mtimeMs < 5000}`);
       const externallyActive = Date.now() - st.mtimeMs < 5000;
@@ -386,6 +406,8 @@ function startSessionWatcher(ws: WebSocket, sessionId: string, state: Connection
         sessionId,
         messages: hist.messages,
         title: hist.title,
+        truncated: hist.truncated,
+        totalCount: hist.totalCount,
         externallyActive,
       });
     } catch {

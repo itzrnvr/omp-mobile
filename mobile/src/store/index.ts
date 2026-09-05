@@ -100,6 +100,8 @@ interface StoreState {
   /** Transient error toast shown above the composer (guard rejections etc). */
   errorToast: string | null;
   lastSendContent: string | null;
+  /** {shown,total} when the loaded history was capped for mobile. */
+  historyTruncated: { shown: number; total: number } | null;
   /** sessionId -> live omp run in progress (server broadcasts). */
   activeSessionIds: Record<string, boolean>;
   /** Re-request server status (model catalog, tunnel, counts) over WS. */
@@ -264,6 +266,20 @@ export const useStore = create<StoreState>((set, get) => {
           }));
           break;
         }
+        // Intermediate assistant responses belong INSIDE the worked widget
+        // as live text steps (user spec 2026-09-05); the final one becomes
+        // the answer below once the turn commits.
+        if (msg?.role === 'assistant') {
+          const blocks = (msg.content || []) as { type?: string; text?: string }[];
+          const txt = blocks
+            .filter((b) => b.type === 'text' && b.text && /[\w]/.test(b.text))
+            .map((b) => b.text || '')
+            .join('\n')
+            .trim();
+          if (txt) {
+            set((s) => ({ liveSteps: [...s.liveSteps, { kind: 'text', text: txt }] })); // live text step
+          }
+        }
         const isAssistant = msg?.role === 'assistant' ||
           (msg?.role === undefined && (get().streamingText.length > 0 || get().streamingThinking.length > 0));
         if (!isAssistant) break;
@@ -414,6 +430,7 @@ export const useStore = create<StoreState>((set, get) => {
     historySig: null,
     errorToast: null,
     lastSendContent: null,
+    historyTruncated: null,
     activeSessionIds: {},
     tunnelUrl: null,
     tunnelStatus: null,
@@ -496,25 +513,9 @@ export const useStore = create<StoreState>((set, get) => {
     // KV-CACHE SAFETY: one writer per session. If the TUI extension is
     // mid-turn for this session, refuse the send (fork or wait) instead of
     // spawning a second omp process that would diverge the KV prefix.
-    const cur = get().currentSessionId;
-    if (cur && get().externalLive[cur]) {
-      set({
-        errorToast:
-          'This session is open in the omp TUI (single writer). Sends are blocked — fork it from the drawer to branch.',
-      });
-      setTimeout(() => set({ errorToast: null }), 5000);
-      set((s) => ({
-        notices: [
-          ...s.notices,
-          {
-            level: 'warning',
-            message:
-              'Session is mid-turn in the omp TUI — sends are blocked until it finishes (single-writer rule). Fork it to branch now.',
-          },
-        ],
-      }));
-      return;
-    }
+    // TUI-owned sessions: the bridge routes this send into the running TUI
+    // turn as steering (pi.sendUserMessage deliverAs:'steer') — same UX as
+    // typing in the TUI while it answers. No second process, no KV divergence.
     // omp -p needs EOF per turn: steering = queue + auto-send on commit.
     if (get().isGenerating) {
       set((s) => ({ steerQueue: [...s.steerQueue, content] }));
@@ -538,6 +539,11 @@ export const useStore = create<StoreState>((set, get) => {
         currentModel: model ?? state.currentModel,
       });
       set({ lastSendContent: content });
+      // own-run active marker so the drawer shows the live dot + top sort
+      const sid0 = state.currentSessionId;
+      if (sid0) {
+        set((s) => ({ activeSessionIds: { ...s.activeSessionIds, [sid0]: true } }));
+      }
       wsService.send({
         type: 'send',
         content,
@@ -565,6 +571,8 @@ export const useStore = create<StoreState>((set, get) => {
         // session matches the stale sig and gets skipped -> empty list
         // (2026-09-05 blank-load root cause).
         historySig: null,
+        externalActive: false,
+        historyTruncated: null,
         messages: [],
         streamingText: '',
         streamingThinking: '',
@@ -582,6 +590,8 @@ export const useStore = create<StoreState>((set, get) => {
       set({
         pendingRestoreId: null,
         historySig: null,
+        externalActive: false,
+        historyTruncated: null,
         currentSessionId: null,
         messages: [],
         streamingText: '',
@@ -619,14 +629,20 @@ export const useStore = create<StoreState>((set, get) => {
               if (get().errorToast === errText) set({ errorToast: null });
           }, 5000);
           }
-          set((s) => ({
-            messages: popped ? msgs.slice(0, -1) : [...s.messages, ...pendingMessages],
-            pendingMessages: [],
-            liveSteps: [],
-            streamingText: '',
-            streamingThinking: '',
-            isGenerating: false,
-          }));
+          const doneSid = get().currentSessionId;
+          set((s) => {
+            const nextActive = { ...s.activeSessionIds };
+            if (doneSid) delete nextActive[doneSid];
+            return {
+              activeSessionIds: nextActive,
+              messages: popped ? msgs.slice(0, -1) : [...s.messages, ...pendingMessages],
+              pendingMessages: [],
+              liveSteps: [],
+              streamingText: '',
+              streamingThinking: '',
+              isGenerating: false,
+            };
+          });
           // Steering: auto-send the next queued message once idle.
           const next = get().steerQueue[0];
           if (next) {
@@ -716,6 +732,9 @@ export const useStore = create<StoreState>((set, get) => {
             currentSessionId: msg.sessionId,
             historySig: sig,
             externalActive: !!msg.externallyActive,
+            historyTruncated: msg.truncated
+              ? { shown: (msg.messages || []).length, total: msg.totalCount || 0 }
+              : null,
             messages: msg.messages,
             streamingText: '',
             streamingThinking: '',

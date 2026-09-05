@@ -193,6 +193,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
         cwd,
         messageCount: header.messageCount,
         size,
+        mtimeMs,
       });
     }
   }
@@ -205,7 +206,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
       const t = new Date(normalized).getTime();
       return Number.isFinite(t) ? t : 0;
     };
-    return parseTs(b.timestamp) - parseTs(a.timestamp);
+    // Last-activity order (file mtime) so live/active sessions surface at
+  // the top; creation-time order buried them mid-list (2026-09-05).
+  return (b.mtimeMs || 0) - (a.mtimeMs || 0);
   });
 
   return sessions;
@@ -279,6 +282,39 @@ export async function getSessionHistory(
   }
 }
 
+/** Max chars kept per text/thinking/toolResult block in mobile history. */
+const MOBILE_BLOCK_CAP = 6000;
+/** Max messages pushed to mobile clients per history load. */
+const MOBILE_MSG_CAP = 200;
+
+function trimBlockText(s: string): string {
+  if (typeof s !== "string" || s.length <= MOBILE_BLOCK_CAP) return s;
+  return s.slice(0, MOBILE_BLOCK_CAP) + " … [truncated for mobile]";
+}
+
+/**
+ * Mobile-sized history: last MOBILE_MSG_CAP messages with oversized content
+ * blocks trimmed. Full 15MB+ session payloads choke the RN WebSocket and the
+ * renderer (the glitchy-list bug, 2026-09-05).
+ */
+export async function getMobileHistory(
+  sessionId: string,
+): Promise<{ messages: OmpMessage[]; title: string; truncated: boolean; totalCount: number } | null> {
+  const full = await getSessionHistory(sessionId);
+  if (!full) return null;
+  const total = full.messages.length;
+  const slice = total > MOBILE_MSG_CAP ? full.messages.slice(total - MOBILE_MSG_CAP) : full.messages;
+  const messages = slice.map((m) => ({
+    ...m,
+    content: (m.content || []).map((c: Record<string, unknown>) => {
+      const out = { ...c };
+      if (typeof out.text === "string") out.text = trimBlockText(out.text);
+      if (typeof out.thinking === "string") out.thinking = trimBlockText(out.thinking);
+      return out;
+    }),
+  })) as OmpMessage[];
+  return { messages, title: full.title, truncated: total > MOBILE_MSG_CAP, totalCount: total };
+}
 /**
  * Delete a session: removes its JSONL plus any advisor sidecar files.
  */

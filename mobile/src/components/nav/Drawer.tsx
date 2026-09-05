@@ -16,7 +16,7 @@
  * pointerEvents gating prevents the hidden backdrop from swallowing touches.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -67,7 +67,14 @@ export interface DrawerProps {
 
 export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSettings }: DrawerProps) {
   const insets = useSafeAreaInsets();
-  const { sessions, refreshSessions, currentSessionId, activeSessionIds } = useStore();
+  // Selectors only — whole-store subscription re-rendered the drawer on every
+  // streaming delta and made it lag while a turn ran (2026-09-05).
+  const sessions = useStore((s) => s.sessions);
+  const refreshSessions = useStore((s) => s.refreshSessions);
+  const currentSessionId = useStore((s) => s.currentSessionId);
+  const activeSessionIds = useStore((s) => s.activeSessionIds);
+  const externalLive = useStore((s) => s.externalLive);
+  const isGenerating = useStore((s) => s.isGenerating);
   const [query, setQuery] = useState("");
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
   const [actionSession, setActionSession] = useState<SessionSummary | null>(null);
@@ -105,12 +112,25 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
   }, [pulse]);
 
   const q = query.trim().toLowerCase();
-  const filtered = q
+  const base = q
     ? sessions.filter(
         (s) =>
           (s.title || "").toLowerCase().includes(q) || (s.cwd || "").toLowerCase().includes(q),
       )
     : sessions;
+  // Live/active sessions pin to the top (2026-09-05): own running turn,
+  // extension-owned (TUI streaming), or server-announced active.
+  const liveIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const [id, on] of Object.entries(activeSessionIds || {})) if (on) set.add(id);
+    for (const [id, on] of Object.entries(externalLive || {})) if (on) set.add(id);
+    if (isGenerating && currentSessionId) set.add(currentSessionId);
+    return set;
+  }, [activeSessionIds, externalLive, isGenerating, currentSessionId]);
+  const filtered = useMemo(
+    () => [...base.filter((s) => liveIds.has(s.id)), ...base.filter((s) => !liveIds.has(s.id))],
+    [base, liveIds],
+  );
 
   // Folder groups ordered by their newest session; current folder open by default.
   const currentDir = sessions.find((s) => s.id === currentSessionId)?.cwd || "";
@@ -149,7 +169,7 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
   };
 
   const renderRow = (s: SessionSummary) => {
-    const active = !!activeSessionIds[s.id];
+    const active = liveIds.has(s.id);
     return (
       <Pressable
         style={[styles.item, s.id === currentSessionId && styles.itemActive]}

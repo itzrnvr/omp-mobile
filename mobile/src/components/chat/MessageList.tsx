@@ -12,7 +12,7 @@
  * - toolResult / developer / system messages never render standalone.
  */
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { FlatList, View, StyleSheet, Pressable, Text as RNText } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { colors, spacing } from "../../theme";
@@ -68,7 +68,18 @@ function buildSteps(turn: Turn): TraceStep[] {
     if (r.toolCallId) byCallId.set(r.toolCallId, r);
   }
   const steps: TraceStep[] = [];
-  for (const msg of turn.assistantMsgs) {
+  const lastTextIdx = (() => {
+    for (let i = turn.assistantMsgs.length - 1; i >= 0; i--) {
+      if (meaningfulText(turn.assistantMsgs[i])) return i;
+    }
+    return -1;
+  })();
+  for (let mi = 0; mi < turn.assistantMsgs.length; mi++) {
+    const msg = turn.assistantMsgs[mi];
+    if (mi !== lastTextIdx) {
+      const mid = meaningfulText(msg);
+      if (mid) steps.push({ kind: "text", text: mid });
+    }
     for (const block of msg.content || []) {
       if (block.type === "thinking" && block.thinking && block.thinking.trim()) {
         steps.push({ kind: "reasoning", text: block.thinking });
@@ -95,14 +106,24 @@ function buildSteps(turn: Turn): TraceStep[] {
   return steps;
 }
 
+function meaningfulText(msg: { content?: unknown[] }): string {
+  const blocks = (msg.content || []) as { type?: string; text?: string }[];
+  return blocks
+    .filter((b) => b.type === "text" && b.text && /[\w]/.test(b.text))
+    .map((b) => b.text || "")
+    .join("\n")
+    .trim();
+}
+
+// Only the FINAL assistant response renders below the widget; intermediate
+// responses live INSIDE the worked group as entries (user spec 2026-09-05).
 function turnText(turn: Turn): string {
   const parts: string[] = [];
   for (const msg of turn.assistantMsgs) {
-    for (const block of msg.content || []) {
-      if (block.type === "text" && block.text) parts.push(block.text);
-    }
+    const txt = meaningfulText(msg);
+    if (txt) parts.push(txt);
   }
-  return parts.join("\n\n");
+  return parts.length ? parts[parts.length - 1] : "";
 }
 
 function turnMeta(turn: Turn): { model?: string; duration?: number } {
@@ -144,7 +165,45 @@ interface MessageListProps {
   isGenerating?: boolean;
   toolCalls?: ToolCallInfo[];
   notices?: { level: string; message: string }[];
+  /** Current IME height so the list reserves space above the lifted composer. */
+  kbHeight?: number;
 }
+
+/** Memoized rows: unchanged turns skip re-render entirely while streaming,
+ * so per-delta cost is just the live footer (2026-09-05 perf fix). */
+const UserRow = React.memo(function UserRow({ msg }: { msg: OmpMessage }) {
+  return <ChatMessage message={msg} />;
+});
+
+const TurnRow = React.memo(function TurnRow({
+  turn,
+  onFork,
+}: {
+  turn: Turn;
+  onFork: (t: Turn) => void;
+}) {
+  const steps = buildSteps(turn);
+  const text = turnText(turn);
+  const meta = turnMeta(turn);
+  // Turn with neither steps nor meaningful text = filler; render nothing.
+  if (steps.length === 0 && !text) return null;
+  return (
+    <View style={styles.turn}>
+      <Trace steps={steps} durationMs={meta.duration} defaultOpen={steps.length > 0 && !text} />
+      {text ? (
+        <>
+          <View style={styles.sep} />
+          <View style={styles.answerWrap}>
+            <MarkdownView markdown={text} />
+          </View>
+          <ActionRow text={text} onFork={() => onFork(turn)} />
+        </>
+      ) : steps.length === 0 ? (
+        <RNText style={styles.emptyResponse}>(empty response)</RNText>
+      ) : null}
+    </View>
+  );
+});
 
 export function MessageList({
   messages,
@@ -153,13 +212,32 @@ export function MessageList({
   isGenerating,
   toolCalls,
   notices,
+  kbHeight,
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const prevMsgCount = useRef(0);
+  // True while the user is parked at the bottom; auto-scroll only then, so
+  // reading older content never fights the stream (2026-09-05 UX fix).
+  const nearBottomRef = useRef(true);
   const [liveOpen, setLiveOpen] = useState(true);
-  const { currentSessionId, forkSession } = useStore();
-  const { liveSteps } = useStore();
+  // Selector subscriptions only: a whole-store subscription re-rendered the
+  // whole list on every streaming delta (lag/glitch storm, 2026-09-05).
+  const currentSessionId = useStore((s) => s.currentSessionId);
+  const forkSession = useStore((s) => s.forkSession);
+  const historyTruncated = useStore((s) => s.historyTruncated);
+  const liveSteps = useStore((s) => s.liveSteps);
+
+  const handleForkCb = useCallback(
+    (turn: Turn) => {
+      void (async () => {
+        if (!currentSessionId) return;
+        const newId = await forkSession(currentSessionId, turn.messageCount);
+        if (newId) openChat(newId);
+      })();
+    },
+    [currentSessionId, forkSession],
+  );
 
   const handleFork = async (turn: Turn) => {
     if (!currentSessionId) return;
@@ -174,19 +252,22 @@ export function MessageList({
     const delta = messages.length - prevMsgCount.current;
     prevMsgCount.current = messages.length;
     if (delta > 1 && !isGenerating) {
+      nearBottomRef.current = true;
       const id = setTimeout(() => {
         listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
       }, 60);
       return () => clearTimeout(id);
     }
-    listRef.current?.scrollToEnd({ animated: true });
+    if (nearBottomRef.current) {
+      listRef.current?.scrollToEnd({ animated: false });
+    }
   }, [messages.length, streamingText, streamingThinking, toolCalls?.length, notices?.length, isGenerating]);
 
   // Reference: keep pinned to bottom every 250ms while a turn is working.
   useEffect(() => {
     if (!isGenerating) return;
     const id = setInterval(() => {
-      listRef.current?.scrollToEnd({ animated: false });
+      if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false });
     }, 250);
     return () => clearInterval(id);
   }, [isGenerating]);
@@ -200,10 +281,11 @@ export function MessageList({
   }) => {
     const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
     const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    nearBottomRef.current = distanceFromBottom < 120;
     setShowScrollButton(distanceFromBottom > 200);
   };
 
-  const items = groupTurns(messages);
+  const items = useMemo(() => groupTurns(messages), [messages]);
 
   const hasContent = items.length > 0 || !!isGenerating;
 
@@ -220,9 +302,14 @@ export function MessageList({
         keyExtractor={(item, i) => (item.kind === "user" ? "u" + i : "t" + i)}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: spacing.md + 132 + (kbHeight || 0) }]}
         ListHeaderComponent={
           <>
+            {historyTruncated ? (
+              <RNText style={styles.truncNote}>
+                {"Showing last " + historyTruncated.shown + " of " + historyTruncated.total + " messages"}
+              </RNText>
+            ) : null}
             {!hasContent && (
               <View style={styles.empty}>
                 <Icon name="chat-outline" size={40} color={colors.textMuted} />
@@ -245,30 +332,13 @@ export function MessageList({
             )}
           </>
         }
-        renderItem={({ item }) => {
-          if (item.kind === "user") {
-            return <ChatMessage message={item.msg} />;
-          }
-          const steps = buildSteps(item.turn);
-          const text = turnText(item.turn);
-          const meta = turnMeta(item.turn);
-          return (
-            <View style={styles.turn}>
-              <Trace steps={steps} durationMs={meta.duration} />
-              {text ? (
-                <>
-                  <View style={styles.sep} />
-                  <View style={styles.answerWrap}>
-                    <MarkdownView markdown={text} />
-                  </View>
-                  <ActionRow text={text} onFork={() => void handleFork(item.turn)} />
-                </>
-              ) : steps.length === 0 ? (
-                <RNText style={styles.emptyResponse}>(empty response)</RNText>
-              ) : null}
-            </View>
-          );
-        }}
+        renderItem={({ item }) =>
+          item.kind === "user" ? (
+            <UserRow msg={item.msg} />
+          ) : (
+            <TurnRow turn={item.turn} onFork={handleForkCb} />
+          )
+        }
         ListFooterComponent={
           isGenerating ? (
             <View style={styles.turn}>
@@ -303,9 +373,10 @@ export function MessageList({
       {showScrollButton && (
         <Pressable
           style={styles.scrollButton}
-          onPress={() =>
-            listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false })
-          }
+          onPress={() => {
+            nearBottomRef.current = true;
+            listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
+          }}
         >
           <Icon name="chevron-down" size={18} color={colors.text} />
         </Pressable>
@@ -319,6 +390,7 @@ const styles = StyleSheet.create({
   list: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   empty: { alignItems: "center", justifyContent: "center", paddingVertical: spacing.xl * 3 },
   notices: { gap: 2, paddingBottom: spacing.xs },
+  truncNote: { color: colors.textMuted, fontSize: 12, paddingBottom: spacing.xs },
   turn: { gap: spacing.xs },
   // Full-bleed hairline between the working group and the final answer.
   sep: {

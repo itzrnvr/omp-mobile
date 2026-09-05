@@ -48,6 +48,15 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   // stuck up after hide, glue behind composer). keyboardDidShow/Hide gives
   // exact heights both ways (2026-09-05).
   const [kbHeight, setKbHeight] = useState(0);
+  // Fallback: some IMEs (floating pill) skip keyboardDidHide — poll visibility
+  // while lifted so the composer never stays stuck up (2026-09-05).
+  useEffect(() => {
+    if (kbHeight <= 0) return;
+    const id = setInterval(() => {
+      if (!Keyboard.isVisible()) setKbHeight(0);
+    }, 400);
+    return () => clearInterval(id);
+  }, [kbHeight]);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (e) =>
       setKbHeight(e.endCoordinates.height),
@@ -208,6 +217,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onSend={handleSend}
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
+        remoteActive={!!(currentSessionId && externalLive[currentSessionId])}
         steerQueue={steerQueue}
         onRemoveSteer={removeSteer}
         bottomInset={kbHeight > 0 ? kbHeight : insets.bottom}

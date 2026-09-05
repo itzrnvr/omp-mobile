@@ -31,6 +31,8 @@ export interface ChatInputProps {
   steerQueue?: string[];
   onRemoveSteer?: (index: number) => void;
   isGenerating?: boolean;
+  /** True while a REMOTE (TUI) turn is streaming this session. */
+  remoteActive?: boolean;
   placeholder?: string;
   bottomInset?: number;
   modelLabel: string;
@@ -48,6 +50,7 @@ export function ChatInput({
   onSend,
   onCancel,
   isGenerating,
+  remoteActive,
   steerQueue,
   onRemoveSteer,
   placeholder = "Ask for follow-up changes",
@@ -160,7 +163,11 @@ export function ChatInput({
             <Icon name="mic" size={22} color="#a3a3a3" />
           </Pressable>
           <Pressable
-            style={[styles.send, canSend && styles.sendReady]}
+            style={[
+              styles.send,
+              canSend && styles.sendReady,
+              remoteActive && isGenerating && styles.sendRemote,
+            ]}
             onPress={onSend}
             disabled={!canSend}
             accessibilityLabel="Send"
@@ -258,5 +265,6 @@ const styles = StyleSheet.create({
   queueWrap: { paddingBottom: spacing.xs, gap: 4 },
   queueChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#242424", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start" },
   queueText: { fontSize: 12, color: "#9ccafa", maxWidth: 220 },
+  sendRemote: { borderWidth: 2, borderColor: "#9ccafa" },
   sendStop: { backgroundColor: colors.error },
 });
