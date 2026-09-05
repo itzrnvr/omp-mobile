@@ -60,6 +60,8 @@ Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId
 
 - giant-session edge (UNRESOLVED, measured): restoring a ~16MB session showed a blank list in one sample; server-side capped history frame is only ~464KB (200 msgs, trimmed blocks) and REST returns full history in 0.4s, so transport size is not the cause - client [hist] recv was not observed in that sample. If it recurs, capture logcat at tap time and check the client history handler for a throw on odd content. (giant-session)
 
+- Steering verified scope (2026-09-05): MID-TURN sends deliver at the turn boundary via agent_end hook (proven in TUI pane). IDLE TUI: ownership is known at ext connect (resume-resolve from newest session file in cwd) but omp offers no idle injection, so steers queue and the app shows a dismissible "Queued for TUI" chip + honest toast; chip clears on next ext agent_start or 60s. Protocol version in ext_hello (EXT_PROTO=2): bridge routes/acks only to modern owners; stale-proto owners get "restart the TUI" error instead of a false ack. (verified scope)
+
 ## Build / test
 
 ```

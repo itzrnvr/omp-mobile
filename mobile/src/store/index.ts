@@ -99,6 +99,9 @@ interface StoreState {
   historySig: string | null;
   /** Transient error toast shown above the composer (guard rejections etc). */
   errorToast: string | null;
+  /** Steers acknowledged by the bridge, awaiting TUI boundary delivery. */
+  pendingSteers: string[];
+  removePendingSteer: (index: number) => void;
   lastSendContent: string | null;
   /** {shown,total} when the loaded history was capped for mobile. */
   historyTruncated: { shown: number; total: number } | null;
@@ -429,6 +432,7 @@ export const useStore = create<StoreState>((set, get) => {
     externalLive: {},
     historySig: null,
     errorToast: null,
+    pendingSteers: [],
     lastSendContent: null,
     historyTruncated: null,
     activeSessionIds: {},
@@ -654,8 +658,15 @@ export const useStore = create<StoreState>((set, get) => {
         case 'steered': {
           // Bridge routed our send into the TUI turn as steering; it will
           // echo back as a user message via ext events. Ack above composer.
-          set({ errorToast: 'Steering sent to the TUI turn - it will pick it up at the next boundary.' });
+          const txt = (get().lastSendContent || '').trim();
+          set((s) => ({ pendingSteers: txt ? [...s.pendingSteers, txt] : s.pendingSteers }));
+          set({ errorToast: 'Steering queued - the TUI picks it up at its next turn boundary.' });
           setTimeout(() => set({ errorToast: null }), 4000);
+          setTimeout(() => {
+            // delivery window: clear oldest pending steer once the TUI starts
+            // processing (agent_start echo) or after 60s.
+            set((s) => ({ pendingSteers: s.pendingSteers.slice(1) }));
+          }, 60000);
           break;
         }
         case 'ext_session': {
@@ -675,7 +686,13 @@ export const useStore = create<StoreState>((set, get) => {
           if (!sid || sid !== get().currentSessionId) break;
           const ev = msg.event;
           if (ev.type === 'agent_start') {
-            set({ isGenerating: true, liveSteps: [], streamingText: '', streamingThinking: '' });
+            set((s) => ({
+              isGenerating: true,
+              liveSteps: [],
+              streamingText: '',
+              streamingThinking: '',
+              pendingSteers: s.pendingSteers.slice(1),
+            }));
           }
           processEvent(ev, sid);
           if (ev.type === 'agent_end') {
@@ -772,6 +789,10 @@ export const useStore = create<StoreState>((set, get) => {
     refreshSessions: () => {
       set({ loadingSessions: true });
       wsService?.send({ type: 'list_sessions' });
+    },
+
+    removePendingSteer: (index) => {
+      set((s) => ({ pendingSteers: s.pendingSteers.filter((_, i) => i !== index) }));
     },
 
     removeSteer: (index) => {

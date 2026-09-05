@@ -29,6 +29,8 @@ export interface ChatInputProps {
   onSend: () => void;
   onCancel?: () => void;
   steerQueue?: string[];
+  pendingSteers?: string[];
+  onRemovePendingSteer?: (index: number) => void;
   onRemoveSteer?: (index: number) => void;
   isGenerating?: boolean;
   /** True while a REMOTE (TUI) turn is streaming this session. */
@@ -53,6 +55,8 @@ function ChatInputBase({
   remoteActive,
   steerQueue,
   onRemoveSteer,
+  pendingSteers,
+  onRemovePendingSteer,
   placeholder = "Ask for follow-up changes",
   bottomInset = 0,
   modelLabel,
@@ -87,6 +91,20 @@ function ChatInputBase({
 
   return (
     <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
+      {pendingSteers && pendingSteers.length > 0 && (
+        <View style={styles.queueWrap}>
+          {pendingSteers.map((q, i) => (
+            <View key={"p" + i} style={styles.queueChip}>
+              <RNText style={styles.queueText} numberOfLines={1}>
+                Queued for TUI: {q}
+              </RNText>
+              <Pressable onPress={() => onRemovePendingSteer && onRemovePendingSteer(i)}>
+                <Icon name="close" size={12} color="#8e8e8e" />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
       {steerQueue && steerQueue.length > 0 && (
         <View style={styles.queueWrap}>
           {steerQueue.map((q, i) => (

@@ -103,6 +103,14 @@ async function handleSend(
   // app->TUI steering is impossible today; refuse with an actionable error
   // instead of spawning a divergent second writer. ext_steer transport itself
   // works (post last-hello-wins eviction) - revisit when omp exposes injection.
+  if (extStaleOwner(cmd.sessionId)) {
+    sendWs(ws, {
+      type: 'error',
+      message:
+        'The TUI holding this session runs an outdated sync extension - restart that TUI to enable steering. Until then, fork the session to continue here.',
+    });
+    return;
+  }
   const ownerWs = extOwnerWs(cmd.sessionId);
   if (ownerWs) {
     sendWs(ownerWs, { type: 'ext_steer', content: cmd.content });
@@ -316,7 +324,8 @@ const sessionWatchers = new Map<
 // KV-CACHE SAFETY: a session with a live extension is SINGLE-WRITER (the TUI).
 // Mobile sends for it are refused (fork instead) so no second omp process can
 // diverge the prompt prefix and break the provider KV/prefix cache lineage.
-const extConns = new Map<WebSocket, { sessionId: string | null }>();
+const EXT_PROTO_CURRENT = 2;
+const extConns = new Map<WebSocket, { sessionId: string | null; proto?: number }>();
 const extRunning = new Map<string, boolean>();
 const extLastEvent = new Map<string, number>();
 
@@ -330,6 +339,15 @@ function extIsRunning(sessionId: string | null | undefined): boolean {
 function extOwns(sessionId: string | null | undefined): boolean {
   if (!sessionId) return false;
   for (const c of extConns.values()) if (c.sessionId === sessionId) return true;
+  return false;
+}
+
+/** Modern-proto owner (safe to route steering to). */
+function extStaleOwner(sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false;
+  for (const [ws, c] of extConns) {
+    if (c.sessionId === sessionId && ws.readyState === 1 && c.proto !== EXT_PROTO_CURRENT) return true;
+  }
   return false;
 }
 
@@ -368,6 +386,7 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
       }
     }
     conn.sessionId = m.sessionId || null;
+    conn.proto = typeof m.proto === "number" ? m.proto : 1;
     if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
     broadcastMobile({ type: 'ext_session', sessionId: conn.sessionId, active: true });
     console.log(`[ext] hello session=${(conn.sessionId || 'none').slice(0, 8)}`);
