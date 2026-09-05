@@ -34,3 +34,4 @@ server/bun.lock
 server/bin/
 models-ls.json
 emu*.log
+ext-errors.log
