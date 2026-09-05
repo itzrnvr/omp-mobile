@@ -1,0 +1,8 @@
+{
+  "name": "omp-mobile-sync",
+  "version": "1.0.0",
+  "type": "module",
+  "omp": {
+    "extensions": ["./index.ts"]
+  }
+}

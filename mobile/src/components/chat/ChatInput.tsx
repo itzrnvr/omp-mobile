@@ -30,6 +30,7 @@ export interface ChatInputProps {
   onCancel?: () => void;
   steerQueue?: string[];
   pendingSteers?: string[];
+  steerModes?: ("mid" | "idle")[];
   onRemovePendingSteer?: (index: number) => void;
   onRemoveSteer?: (index: number) => void;
   isGenerating?: boolean;
@@ -57,6 +58,7 @@ function ChatInputBase({
   onRemoveSteer,
   pendingSteers,
   onRemovePendingSteer,
+  steerModes,
   placeholder = "Ask for follow-up changes",
   bottomInset = 0,
   modelLabel,
@@ -96,7 +98,9 @@ function ChatInputBase({
           {pendingSteers.map((q, i) => (
             <View key={"p" + i} style={styles.queueChip}>
               <RNText style={styles.queueText} numberOfLines={1}>
-                Queued for TUI: {q}
+                {steerModes && steerModes[i] === "mid"
+                  ? "Steering live turn: " + q
+                  : "Queued for TUI's next turn: " + q}
               </RNText>
               <Pressable onPress={() => onRemovePendingSteer && onRemovePendingSteer(i)}>
                 <Icon name="close" size={12} color="#8e8e8e" />
