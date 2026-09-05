@@ -85,6 +85,18 @@ async function handleSend(
   state: ConnectionState,
   cmd: { content: string; sessionId?: string | null; model?: string; thinking?: string; autoApprove?: boolean; cwd?: string },
 ): Promise<void> {
+  // KV-CACHE SAFETY: one writer per session. If the TUI (extension) is mid-turn
+  // for this session, spawning a second omp --resume here would diverge the
+  // prompt prefix and wreck the provider KV/prefix cache lineage. Refuse; the
+  // client offers fork/wait.
+  if (extOwns(cmd.sessionId) || extIsRunning(cmd.sessionId)) {
+    sendWs(ws, {
+      type: 'error',
+      message:
+        'This session is open in the omp TUI, which is the single writer (KV-cache safety). Mobile sends are blocked — fork it from the drawer to continue on mobile.',
+    });
+    return;
+  }
   if (state.ompKill) {
     state.ompKill();
   }
@@ -277,6 +289,75 @@ const sessionWatchers = new Map<
   { sessionId: string; timer: ReturnType<typeof setInterval> | null; lastMtime: number }
 >();
 
+// ─── Extension (TUI) live-sync connections (2026-09-05) ────────────────────
+// The omp-mobile-sync extension inside a running TUI mirrors every streaming
+// event here; we rebroadcast to mobile clients for token-level sync.
+// KV-CACHE SAFETY: a session with a live extension is SINGLE-WRITER (the TUI).
+// Mobile sends for it are refused (fork instead) so no second omp process can
+// diverge the prompt prefix and break the provider KV/prefix cache lineage.
+const extConns = new Map<WebSocket, { sessionId: string | null }>();
+const extRunning = new Map<string, boolean>();
+const extLastEvent = new Map<string, number>();
+
+function extIsRunning(sessionId: string | null | undefined): boolean {
+  return !!sessionId && extRunning.get(sessionId) === true;
+}
+
+// Deterministic single-writer rule: if ANY live extension connection owns this
+// session (TUI has it open), the TUI is the writer — mobile must fork. Covers
+// the race where a TUI turn starts right after a mobile send would spawn.
+function extOwns(sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false;
+  for (const c of extConns.values()) if (c.sessionId === sessionId) return true;
+  return false;
+}
+
+function extRecentlyActive(sessionId: string | null | undefined, ms = 2000): boolean {
+  if (!sessionId) return false;
+  const at = extLastEvent.get(sessionId);
+  return !!at && Date.now() - at < ms;
+}
+
+function broadcastMobile(msg: Record<string, unknown>): void {
+  for (const c of connections.keys()) sendWs(c, msg);
+}
+
+function handleExtMessage(ws: WebSocket, raw: string): void {
+  let m: { type?: string; sessionId?: string | null; event?: Record<string, unknown> };
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const conn = extConns.get(ws);
+  if (!conn) return;
+  if (m.type === 'ext_hello') {
+    conn.sessionId = m.sessionId || null;
+    if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
+    broadcastMobile({ type: 'ext_session', sessionId: conn.sessionId, active: true });
+    console.log(`[ext] hello session=${(conn.sessionId || 'none').slice(0, 8)}`);
+    return;
+  }
+  if (m.type === 'ext_bye') {
+    const sid = conn.sessionId;
+    if (sid) {
+      extRunning.set(sid, false);
+      broadcastMobile({ type: 'ext_session', sessionId: sid, active: false });
+    }
+    return;
+  }
+  if (m.type === 'ext_event') {
+    const sid = m.sessionId || conn.sessionId;
+    if (!sid) return;
+    conn.sessionId = sid;
+    extLastEvent.set(sid, Date.now());
+    const ev = m.event || {};
+    if (ev.type === 'agent_start') extRunning.set(sid, true);
+    if (ev.type === 'agent_end') extRunning.set(sid, false);
+    broadcastMobile({ type: 'ext_event', sessionId: sid, event: ev });
+  }
+}
+
 function stopSessionWatcher(ws: WebSocket): void {
   const w = sessionWatchers.get(ws);
   if (w?.timer) clearInterval(w.timer);
@@ -289,6 +370,7 @@ function startSessionWatcher(ws: WebSocket, sessionId: string, state: Connection
   sessionWatchers.set(ws, entry);
   const tick = async () => {
     if (state.ompKill) return;
+    if (extIsRunning(sessionId) || extRecentlyActive(sessionId)) return;
     try {
       const file = await findSessionFile(sessionId);
       if (!file) return;
@@ -460,6 +542,12 @@ const server = Bun.serve({
 
   websocket: {
     open(ws: WebSocket) {
+      const data = (ws as unknown as { data?: { ext?: boolean } }).data;
+      if (data?.ext) {
+        extConns.set(ws, { sessionId: null });
+        console.log(`[ext] connected (${extConns.size} total)`);
+        return;
+      }
       connections.set(ws, {
         ompKill: null,
         currentSessionId: null,
@@ -467,9 +555,18 @@ const server = Bun.serve({
       console.log(`[ws] client connected (${connections.size} total)`);
       // Push status immediately so every client shows server + tunnel state on connect.
       void buildStatus().then((status) => sendWs(ws, { type: "status", status }));
+      // Sync TUI-ownership state so the single-writer guard is correct even
+      // if the client missed earlier ext_session broadcasts (reconnects).
+      for (const c of extConns.values()) {
+        if (c.sessionId) sendWs(ws, { type: "ext_session", sessionId: c.sessionId, active: true });
+      }
     },
 
     async message(ws: WebSocket, message: string | Buffer) {
+      if (extConns.has(ws)) {
+        handleExtMessage(ws, typeof message === 'string' ? message : message.toString());
+        return;
+      }
       const state = connections.get(ws);
       if (!state) return;
 
@@ -485,6 +582,16 @@ const server = Bun.serve({
     },
 
     close(ws: WebSocket) {
+      if (extConns.has(ws)) {
+        const sid = extConns.get(ws)?.sessionId;
+        extConns.delete(ws);
+        if (sid) {
+          extRunning.set(sid, false);
+          broadcastMobile({ type: 'ext_session', sessionId: sid, active: false });
+        }
+        console.log(`[ext] disconnected (${extConns.size} total)`);
+        return;
+      }
       const state = connections.get(ws);
       if (state?.ompKill) {
         state.ompKill();
@@ -502,7 +609,8 @@ const server = Bun.serve({
         return new Response("Unauthorized", { status: 401 });
       }
 
-      const success = server.upgrade(req);
+      const upUrl = new URL(req.url);
+      const success = server.upgrade(req, { data: { ext: upUrl.pathname === '/ext' } });
       if (success) return undefined as unknown as Response;
       return new Response("WebSocket upgrade failed", { status: 400 });
     }

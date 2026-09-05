@@ -93,6 +93,13 @@ interface StoreState {
   pendingRestoreId: string | null;
   /** True while the open session is live in another omp instance (TUI). */
   externalActive: boolean;
+  /** sessionId -> TUI extension currently streaming it (token-level sync). */
+  externalLive: Record<string, boolean>;
+  /** Signature of last applied history push (dedupe watcher re-pushes). */
+  historySig: string | null;
+  /** Transient error toast shown above the composer (guard rejections etc). */
+  errorToast: string | null;
+  lastSendContent: string | null;
   /** sessionId -> live omp run in progress (server broadcasts). */
   activeSessionIds: Record<string, boolean>;
   /** Re-request server status (model catalog, tunnel, counts) over WS. */
@@ -403,6 +410,10 @@ export const useStore = create<StoreState>((set, get) => {
     pendingRestoreId: null,
     steerQueue: [],
     externalActive: false,
+    externalLive: {},
+    historySig: null,
+    errorToast: null,
+    lastSendContent: null,
     activeSessionIds: {},
     tunnelUrl: null,
     tunnelStatus: null,
@@ -482,6 +493,28 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     sendMessage: (content, opts) => {
+    // KV-CACHE SAFETY: one writer per session. If the TUI extension is
+    // mid-turn for this session, refuse the send (fork or wait) instead of
+    // spawning a second omp process that would diverge the KV prefix.
+    const cur = get().currentSessionId;
+    if (cur && get().externalLive[cur]) {
+      set({
+        errorToast:
+          'This session is open in the omp TUI (single writer). Sends are blocked — fork it from the drawer to branch.',
+      });
+      setTimeout(() => set({ errorToast: null }), 5000);
+      set((s) => ({
+        notices: [
+          ...s.notices,
+          {
+            level: 'warning',
+            message:
+              'Session is mid-turn in the omp TUI — sends are blocked until it finishes (single-writer rule). Fork it to branch now.',
+          },
+        ],
+      }));
+      return;
+    }
     // omp -p needs EOF per turn: steering = queue + auto-send on commit.
     if (get().isGenerating) {
       set((s) => ({ steerQueue: [...s.steerQueue, content] }));
@@ -504,6 +537,7 @@ export const useStore = create<StoreState>((set, get) => {
         notices: [],
         currentModel: model ?? state.currentModel,
       });
+      set({ lastSendContent: content });
       wsService.send({
         type: 'send',
         content,
@@ -527,6 +561,10 @@ export const useStore = create<StoreState>((set, get) => {
     loadSession: (sessionId) => {
       set({
         currentSessionId: sessionId,
+        // Reset the dedupe sig: otherwise the history push for a re-opened
+        // session matches the stale sig and gets skipped -> empty list
+        // (2026-09-05 blank-load root cause).
+        historySig: null,
         messages: [],
         streamingText: '',
         streamingThinking: '',
@@ -543,6 +581,7 @@ export const useStore = create<StoreState>((set, get) => {
       AsyncStorage.removeItem(KEY_LAST_SESSION).catch(() => {});
       set({
         pendingRestoreId: null,
+        historySig: null,
         currentSessionId: null,
         messages: [],
         streamingText: '',
@@ -563,8 +602,25 @@ export const useStore = create<StoreState>((set, get) => {
         case 'complete':
         case 'error': {
           const { pendingMessages } = get();
+          const errText = msg.type === 'error' ? msg.message || '' : '';
+          // Guard rejection (single-writer): remove the optimistic user bubble
+          // so no phantom turn lingers, and toast the reason above composer.
+          const isGuard = /single writer|KV-cache/i.test(errText);
+          const msgs = get().messages;
+          const lastM = msgs[msgs.length - 1];
+          const popped =
+            isGuard &&
+            !!lastM &&
+            lastM.role === 'user' &&
+            JSON.stringify(lastM.content || []).includes(get().lastSendContent || '\u0000');
+          if (errText) {
+            set({ errorToast: errText });
+          setTimeout(() => {
+              if (get().errorToast === errText) set({ errorToast: null });
+          }, 5000);
+          }
           set((s) => ({
-            messages: [...s.messages, ...pendingMessages],
+            messages: popped ? msgs.slice(0, -1) : [...s.messages, ...pendingMessages],
             pendingMessages: [],
             liveSteps: [],
             streamingText: '',
@@ -576,6 +632,39 @@ export const useStore = create<StoreState>((set, get) => {
           if (next) {
             set((s) => ({ steerQueue: s.steerQueue.slice(1) }));
             setTimeout(() => get().sendMessage(next), 50);
+          }
+          break;
+        }
+        case 'ext_session': {
+          const sid = msg.sessionId;
+          set((s) => ({
+            externalLive: sid
+              ? { ...s.externalLive, [sid]: msg.active }
+              : s.externalLive,
+          }));
+          if (sid && sid === get().currentSessionId) set({ externalActive: msg.active });
+          break;
+        }
+        case 'ext_event': {
+          // Token-level mirror of a TUI-run session. Reuse the live pipeline
+          // verbatim; commit on agent_end (no 'complete' arrives externally).
+          const sid = msg.sessionId;
+          if (!sid || sid !== get().currentSessionId) break;
+          const ev = msg.event;
+          if (ev.type === 'agent_start') {
+            set({ isGenerating: true, liveSteps: [], streamingText: '', streamingThinking: '' });
+          }
+          processEvent(ev, sid);
+          if (ev.type === 'agent_end') {
+            const { pendingMessages } = get();
+            set((s) => ({
+              messages: [...s.messages, ...pendingMessages],
+              pendingMessages: [],
+              liveSteps: [],
+              streamingText: '',
+              streamingThinking: '',
+              isGenerating: false,
+            }));
           }
           break;
         }
@@ -605,6 +694,17 @@ export const useStore = create<StoreState>((set, get) => {
           set((s) => ({ attachments: [...s.attachments, msg.path] }));
           break;
         case 'history': {
+          // Dedupe identical re-pushes (watcher + restore racing): each one
+          // re-rendered the whole list and caused the session-load flash.
+          const hm = msg.messages || [];
+          const lastM = hm[hm.length - 1] as { role?: string; content?: unknown[] } | undefined;
+          const sig = msg.sessionId + ':' + hm.length + ':' + (lastM?.role || '') + ':' + (lastM?.content || []).length;
+          console.log('[hist] recv', msg.sessionId.slice(0,8), hm.length, 'sig=', sig.slice(0,24), 'prev=', (get().historySig || '').slice(0,24));
+          if (sig === get().historySig && get().currentSessionId === msg.sessionId) {
+            console.log('[hist] SKIP dedupe');
+            if (msg.externallyActive) set({ externalActive: true });
+            break;
+          }
           // Preselect the model omp actually ran this session with, so the
           // picker check + composer chip match reality (2026-09-05).
           let activeModel: string | null = null;
@@ -614,6 +714,8 @@ export const useStore = create<StoreState>((set, get) => {
           }
           set({
             currentSessionId: msg.sessionId,
+            historySig: sig,
+            externalActive: !!msg.externallyActive,
             messages: msg.messages,
             streamingText: '',
             streamingThinking: '',
@@ -621,6 +723,7 @@ export const useStore = create<StoreState>((set, get) => {
             sessionTitle: msg.title || null,
             ...(activeModel ? { selectedModel: activeModel } : {}),
           });
+          console.log('[hist] APPLIED', msg.messages.length);
           if (activeModel) AsyncStorage.setItem(KEY_MODEL, activeModel).catch(() => {});
           break;
         }

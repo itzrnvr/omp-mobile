@@ -70,7 +70,7 @@ function buildSteps(turn: Turn): TraceStep[] {
   const steps: TraceStep[] = [];
   for (const msg of turn.assistantMsgs) {
     for (const block of msg.content || []) {
-      if (block.type === "thinking" && block.thinking) {
+      if (block.type === "thinking" && block.thinking && block.thinking.trim()) {
         steps.push({ kind: "reasoning", text: block.thinking });
       } else if (block.type === "tool_use" || block.type === "toolCall") {
         // omp JSONL history uses block type "toolCall" (pi format):

@@ -42,14 +42,26 @@ interface LsModel {
   reasoning?: boolean;
 }
 
-function fromCli(): ModelCatalogEntry[] | null {
+async function fromCli(): Promise<ModelCatalogEntry[] | null> {
+  // Async + hard timeout + stdin ignored: the CLI must never block the event
+  // loop, and extensions loaded inside it must not hang the bridge boot.
   try {
-    const proc = Bun.spawnSync(["omp", "models", "ls", "--json"], {
+    const proc = Bun.spawn(["omp", "models", "ls", "--json"], {
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "ignore",
+      stdin: "ignore",
     });
-    if (proc.exitCode !== 0) return null;
-    const text = new TextDecoder().decode(proc.stdout);
+    const killer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        /* ignore */
+      }
+    }, 20000);
+    const text = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    clearTimeout(killer);
+    if (code !== 0) return null;
     const doc = JSON.parse(text) as { models?: LsModel[] };
     const list = doc.models || [];
     if (list.length === 0) return null;
@@ -69,7 +81,6 @@ function fromCli(): ModelCatalogEntry[] | null {
     return null;
   }
 }
-
 function fromYml(): ModelCatalogEntry[] {
   try {
     const doc = parse(readFileSync(MODELS_YML, "utf-8")) as {
@@ -100,7 +111,7 @@ function fromYml(): ModelCatalogEntry[] {
 async function refresh(): Promise<ModelCatalogEntry[]> {
   if (inflight) return inflight;
   inflight = (async () => {
-    const entries = fromCli() ?? fromYml();
+    const entries = (await fromCli()) ?? fromYml();
     cache = { at: Date.now(), entries };
     inflight = null;
     return entries;
@@ -115,8 +126,9 @@ export function loadModelCatalog(): ModelCatalogEntry[] {
     void refresh();
     return cache.entries;
   }
-  const entries = fromCli() ?? fromYml();
+  const entries = fromYml();
   cache = { at: Date.now(), entries };
+  void refresh();
   return entries;
 }
 

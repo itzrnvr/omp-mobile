@@ -230,7 +230,13 @@ export function Trace({ steps, durationMs, isStreaming, open, onToggle }: TraceP
 
       {expanded && (
         <View style={styles.trace}>
-          {steps.map((step, i) => {
+          {steps.map((rawStep, i) => {
+            // Completed turns (history) must never show running dots: force
+            // done status when not streaming (2026-09-05 dots bug).
+            const step =
+              !isStreaming && rawStep.kind === "tool"
+                ? { ...rawStep, status: "done" as const }
+                : rawStep;
             const last = i === steps.length - 1 && !isStreaming;
             return (
               <FadeIn key={i}>

@@ -15,6 +15,7 @@ import { Keyboard } from "react-native";
 import {
   View,
   StyleSheet,
+  ActivityIndicator,
   Pressable,
   BackHandler,
   ScrollView,
@@ -71,6 +72,9 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     steerQueue,
     removeSteer,
     externalActive,
+    externalLive,
+    currentSessionId,
+    errorToast,
     selectedModel,
     thinkingLevel,
     selectedCwd,
@@ -144,7 +148,13 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   if (wsStatus !== "connected") {
     return (
       <View style={styles.disconnected}>
-        <Text size="lg" color="textMuted">Not connected to server</Text>
+        <ActivityIndicator size="large" color="#9ccafa" />
+        <Text size="lg" color="textSecondary" style={styles.connectTitle}>
+          {wsStatus === "connecting" ? "Connecting to bridge…" : "Reconnecting to bridge…"}
+        </Text>
+        <Text size="sm" color="textMuted" style={styles.connectSub}>
+          Resolving tunnel · restoring your last session
+        </Text>
       </View>
     );
   }
@@ -168,11 +178,11 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         </Pressable>
       </View>
 
-      {externalActive ? (
+      {externalActive || externalLive[currentSessionId ?? ''] ? (
         <View style={styles.syncBanner}>
           <Icon name="activity" size={13} color="#9ccafa" />
           <Text size="xs" color="textSecondary">
-            Live in omp TUI — syncing in real time
+            Live in omp TUI — streaming in real time
           </Text>
         </View>
       ) : null}
@@ -185,6 +195,12 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         toolCalls={toolCalls}
         notices={notices}
       />
+
+      {errorToast ? (
+        <View style={styles.toast}>
+          <Text size="xs" color="textSecondary">{errorToast}</Text>
+        </View>
+      ) : null}
 
       <ChatInput
         value={input}
@@ -228,6 +244,9 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
 const styles = StyleSheet.create({
   syncBanner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d2733" },
   container: { flex: 1, backgroundColor: colors.bg },
+  toast: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },
+  connectTitle: { marginTop: 14 },
+  connectSub: { marginTop: 6 },
   disconnected: {
     flex: 1,
     alignItems: "center",

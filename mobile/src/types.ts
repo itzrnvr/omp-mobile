@@ -186,6 +186,8 @@ export type WsServerMessage =
     /** Session file is being written by another omp instance right now. */
     externallyActive?: boolean;
   }
+  | { type: 'ext_event'; sessionId: string; event: OmpEvent }
+  | { type: 'ext_session'; sessionId: string | null; active: boolean }
   | { type: 'status'; status: ServerStatus }
   | { type: 'tunnel'; url: string | null; status: string }
   | { type: 'forked'; sessionId: string; sessions: SessionSummary[] }
