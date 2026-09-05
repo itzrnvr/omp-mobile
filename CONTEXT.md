@@ -51,6 +51,11 @@ Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId
 - Emulator IME floats; measure tap targets from `uiautomator dump` content-desc bounds, never from screenshot pixels (letterbox scale varies per capture).
 - omp `-p` needs EOF per turn → steering from mobile = client-side queue, auto-sent on commit.
 - Session dir names encode cwd with `--` and may contain odd chars; match by `includes(sessionId)`.
+- historySig dedupe: `loadSession`/`startNewSession` MUST reset `historySig`, else re-opening a session dedupe-skips its history push and renders an empty list (blank-load root cause, 2026-09-05).
+- Never add scroll cascades or opacity reveal gates to MessageList's FlatList — they blanked rows on this RN version. HEAD's instant jump (delta>1 → `scrollToOffset(MAX, animated:false)`) is the stable anchoring.
+- Completed turns: force tool-step status `done` when `!isStreaming`, else history rows show running dots.
+- Optimistic user bubble: on a server guard error, pop it (match via `lastSendContent`) or a phantom turn lingers.
+- Emulator IME floats and shifts the composer: re-dump content-desc bounds for Send before every tap.
 
 ## Build / test
 
