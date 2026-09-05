@@ -662,11 +662,9 @@ export const useStore = create<StoreState>((set, get) => {
           set((s) => ({ pendingSteers: txt ? [...s.pendingSteers, txt] : s.pendingSteers }));
           set({ errorToast: 'Steering queued - the TUI picks it up at its next turn boundary.' });
           setTimeout(() => set({ errorToast: null }), 4000);
-          setTimeout(() => {
-            // delivery window: clear oldest pending steer once the TUI starts
-            // processing (agent_start echo) or after 60s.
-            set((s) => ({ pendingSteers: s.pendingSteers.slice(1) }));
-          }, 60000);
+          // Chip stays until the TUI confirms delivery (ext agent_start);
+          // no timeout - a timed-out chip would read as lost while the steer
+          // still lands at a later boundary (2026-09-05 advisory).
           break;
         }
         case 'ext_session': {

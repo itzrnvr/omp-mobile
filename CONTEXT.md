@@ -62,6 +62,8 @@ Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId
 
 - Steering verified scope (2026-09-05): MID-TURN sends deliver at the turn boundary via agent_end hook (proven in TUI pane). IDLE TUI: ownership is known at ext connect (resume-resolve from newest session file in cwd) but omp offers no idle injection, so steers queue and the app shows a dismissible "Queued for TUI" chip + honest toast; chip clears on next ext agent_start or 60s. Protocol version in ext_hello (EXT_PROTO=2): bridge routes/acks only to modern owners; stale-proto owners get "restart the TUI" error instead of a false ack. (verified scope)
 
+- Steering delivery semantics (2026-09-05, dup-proven): with api assigned, immediate sendUserMessage DELIVERS mid-turn (DUP-CHECK-4 showed 2 user entries when the queue was retained = duplicate). Fix: clear pendingSteers on no-throw immediate; agent_end hook now only fires for the threw/missing branch. Idle TUI owns nothing (event-bound sid; resume-resolve reverted - fresh omp launches create new sessions, pre-created empty JSONLs are deleted on clean exit). Proto-versioned hello (EXT_PROTO=2) gates routing/acks. (duplicate injection)
+
 ## Build / test
 
 ```

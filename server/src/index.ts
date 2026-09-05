@@ -387,6 +387,7 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     }
     conn.sessionId = m.sessionId || null;
     conn.proto = typeof m.proto === "number" ? m.proto : 1;
+    console.log("[ext] hello proto=" + conn.proto + " session=" + (conn.sessionId || "none").slice(0, 8));
     if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
     broadcastMobile({ type: 'ext_session', sessionId: conn.sessionId, active: true });
     console.log(`[ext] hello session=${(conn.sessionId || 'none').slice(0, 8)}`);
