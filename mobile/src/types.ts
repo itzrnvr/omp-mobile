@@ -148,6 +148,7 @@ export type WsClientCommand =
   | { type: 'fork_session'; sessionId: string; messageCount: number }
   | { type: 'delete_session'; sessionId: string }
   | { type: 'rename_session'; sessionId: string; title: string }
+  | { type: 'upload'; name: string; data: string; cwd?: string }
   | { type: 'cancel' }
   | { type: 'start_tunnel' }
   | { type: 'stop_tunnel' };
@@ -161,7 +162,9 @@ export type WsServerMessage =
   | { type: 'status'; status: ServerStatus }
   | { type: 'tunnel'; url: string | null; status: string }
   | { type: 'forked'; sessionId: string; sessions: SessionSummary[] }
-  | { type: 'deleted'; sessionId: string; sessions: SessionSummary[] };
+  | { type: 'deleted'; sessionId: string; sessions: SessionSummary[] }
+  | { type: 'renamed'; sessionId: string; sessions: SessionSummary[] }
+  | { type: 'uploaded'; path: string };
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 

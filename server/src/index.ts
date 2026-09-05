@@ -17,6 +17,8 @@
  */
 
 import { spawnOmp, getOmpVersion } from "./omp.ts";
+import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { listSessions, getSessionHistory } from "./sessions.ts";
 import { deleteSession, forkSession } from "./sessions.ts";
 import { renameSession } from "./sessions.ts";
@@ -193,6 +195,23 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
         sendWs(ws, { type: "renamed", sessionId: cmd.sessionId, sessions });
       } else {
         sendWs(ws, { type: "error", message: `Rename failed: ${cmd.sessionId}` });
+      }
+      break;
+    }
+
+    case "upload": {
+      try {
+        const dir = join(cmd.cwd || process.cwd(), ".attachments");
+        mkdirSync(dir, { recursive: true });
+        const safeName = cmd.name.replace(/[^\w.\-]/g, "_");
+        const path = join(dir, safeName);
+        writeFileSync(path, Buffer.from(cmd.data, "base64"));
+        sendWs(ws, { type: "uploaded", path });
+      } catch (err) {
+        sendWs(ws, {
+          type: "error",
+          message: `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
       break;
     }

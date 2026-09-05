@@ -176,6 +176,13 @@ export interface WsRenameSessionCommand {
   title: string;
 }
 
+export interface WsUploadCommand {
+  type: "upload";
+  name: string;
+  data: string;
+  cwd?: string;
+}
+
 export interface WsStartTunnelCommand {
   type: "start_tunnel";
 }
@@ -194,7 +201,8 @@ export type WsClientCommand =
   | WsStopTunnelCommand
   | WsForkSessionCommand
   | WsDeleteSessionCommand
-  | WsRenameSessionCommand;
+  | WsRenameSessionCommand
+  | WsUploadCommand;
 
 // ─── WebSocket Protocol (Server → Client) ─────────────────────────────────────
 
@@ -238,6 +246,11 @@ export interface WsSessionMutatedMessage {
   sessions: SessionSummary[];
 }
 
+export interface WsUploadedMessage {
+  type: "uploaded";
+  path: string;
+}
+
 export interface WsTunnelMessage {
   type: "tunnel";
   url: string | null;
@@ -252,7 +265,8 @@ export type WsServerMessage =
   | WsHistoryMessage
   | WsStatusMessage
   | WsTunnelMessage
-  | WsSessionMutatedMessage;
+  | WsSessionMutatedMessage
+  | WsUploadedMessage;
 
 // ─── Session Models ───────────────────────────────────────────────────────────
 

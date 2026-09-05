@@ -21,7 +21,7 @@ import { Icon } from "../components/ui/Icon";
 import { useStore } from "../store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export function SettingsScreen() {
+export function SettingsScreen({ embedded }: { embedded?: boolean }) {
   const insets = useSafeAreaInsets();
   const { serverUrl, token, wsStatus, serverStatus, setToken } = useStore();
   const [showToken, setShowToken] = useState(false);
@@ -32,8 +32,12 @@ export function SettingsScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]}
+      style={embedded ? undefined : styles.container}
+      contentContainerStyle={
+        embedded
+          ? styles.content
+          : [styles.content, { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) }]
+      }
     >
       <Stack gap="md">
         <Card>

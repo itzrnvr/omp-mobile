@@ -98,6 +98,7 @@ interface StoreState {
   addAttachment: (path: string) => void;
   clearAttachments: () => void;
   renameSession: (sessionId: string, title: string) => void;
+  uploadAttachment: (name: string, base64: string) => void;
   /** Recently used model values (most recent first) for the picker strip. */
   recentModels: string[];
 
@@ -513,6 +514,9 @@ export const useStore = create<StoreState>((set, get) => {
         case 'renamed':
           set({ sessions: msg.sessions, loadingSessions: false });
           break;
+        case 'uploaded':
+          set((s) => ({ attachments: [...s.attachments, msg.path] }));
+          break;
         case 'history':
           set({
             currentSessionId: msg.sessionId,
@@ -601,6 +605,10 @@ export const useStore = create<StoreState>((set, get) => {
     clearAttachments: () => set({ attachments: [] }),
     renameSession: (sessionId, title) => {
       wsService?.send({ type: "rename_session", sessionId, title });
+    },
+
+    uploadAttachment: (name, base64) => {
+      wsService?.send({ type: "upload", name, data: base64, cwd: get().selectedCwd ?? undefined });
     },
 
     recentModels: [],
