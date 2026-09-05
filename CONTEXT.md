@@ -58,6 +58,8 @@ Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId
 - App→TUI steering is NOT achievable with current omp: the runtime ExtensionAPI object does NOT expose sendUserMessage (key-dump verified 2026-09-05; earlier no-op symptoms were a module-scope ReferenceError in the extension WS handler, since fixed, plus stale-first-match ext routing, since fixed with last-hello-wins eviction - the ext_steer transport itself works). Ceiling = viewer + single-writer guard: app sends to a TUI-owned session get an actionable error (reply there / fork); a 5s mtime-freshness guard covers the window when the TUI is open but its ext socket is down (own writes excluded via ownCompletedAt). Dead ext sockets pruned (readyState + 30s interval). Revisit steering when omp exposes message injection on the runtime pi.
 - Emulator IME floats and shifts the composer: re-dump content-desc bounds for Send before every tap.
 
+- giant-session edge (UNRESOLVED, measured): restoring a ~16MB session showed a blank list in one sample; server-side capped history frame is only ~464KB (200 msgs, trimmed blocks) and REST returns full history in 0.4s, so transport size is not the cause - client [hist] recv was not observed in that sample. If it recurs, capture logcat at tap time and check the client history handler for a throw on odd content. (giant-session)
+
 ## Build / test
 
 ```

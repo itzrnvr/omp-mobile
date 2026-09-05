@@ -10,7 +10,7 @@
  * - Hardware back closes any open overlay first.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 import {
   View,
@@ -157,9 +157,11 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   // Stable handler identities so memoized children (Drawer/ChatInput/
   // ModelSheet) skip re-render on streaming deltas (2026-09-05 perf).
   const onOpenModelCb = useCallback(() => setSheetOpen(true), []);
-  const onAttachFilesCb = useCallback(() => { void onAttachFiles(); }, [onAttachFiles]);
-  const onTakePhotoCb = useCallback(() => { void onTakePhoto(); }, [onTakePhoto]);
-  const onPasteLinkCb = useCallback(() => { void onPasteLink(); }, [onPasteLink]);
+  const handlersRef = useRef<{ onAttachFiles: () => Promise<void>; onTakePhoto: () => Promise<void>; onPasteLink: () => Promise<void>; handleSend: () => void } | null>(null);
+  const onAttachFilesCb = useCallback(() => { void handlersRef.current?.onAttachFiles(); }, []);
+  const onTakePhotoCb = useCallback(() => { void handlersRef.current?.onTakePhoto(); }, []);
+  const onPasteLinkCb = useCallback(() => { void handlersRef.current?.onPasteLink(); }, []);
+  const onSendCb = useCallback(() => { handlersRef.current?.handleSend(); }, []);
   const onCloseSheetCb = useCallback(() => setSheetOpen(false), []);
   const onCloseDrawerCb = useCallback(() => setDrawerOpen(false), []);
   const onOpenSessionCb = useCallback((id: string) => openChat(id), [openChat]);
@@ -181,6 +183,8 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     );
   }
 
+
+  handlersRef.current = { onAttachFiles, onTakePhoto, onPasteLink, handleSend };
 
   const modelLabel =
     (serverStatus?.models || []).find((m) => m.value === selectedModel)?.label ||
@@ -228,7 +232,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
       <ChatInput
         value={input}
         onChangeText={setInput}
-        onSend={handleSend}
+        onSend={onSendCb}
         onCancel={cancelGeneration}
         isGenerating={isGenerating}
         remoteActive={!!(currentSessionId && externalLive[currentSessionId])}
