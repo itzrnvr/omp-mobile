@@ -138,6 +138,7 @@ export interface WsSendCommand {
   model?: string;
   thinking?: string;
   autoApprove?: boolean;
+  approvalMode?: "auto" | "ask" | "readonly";
   cwd?: string;
 }
 
@@ -158,6 +159,23 @@ export interface WsCancelCommand {
   type: "cancel";
 }
 
+export interface WsForkSessionCommand {
+  type: "fork_session";
+  sessionId: string;
+  messageCount: number;
+}
+
+export interface WsDeleteSessionCommand {
+  type: "delete_session";
+  sessionId: string;
+}
+
+export interface WsRenameSessionCommand {
+  type: "rename_session";
+  sessionId: string;
+  title: string;
+}
+
 export interface WsStartTunnelCommand {
   type: "start_tunnel";
 }
@@ -173,7 +191,10 @@ export type WsClientCommand =
   | WsGetStatusCommand
   | WsCancelCommand
   | WsStartTunnelCommand
-  | WsStopTunnelCommand;
+  | WsStopTunnelCommand
+  | WsForkSessionCommand
+  | WsDeleteSessionCommand
+  | WsRenameSessionCommand;
 
 // ─── WebSocket Protocol (Server → Client) ─────────────────────────────────────
 
@@ -211,6 +232,12 @@ export interface WsStatusMessage {
   status: ServerStatus;
 }
 
+export interface WsSessionMutatedMessage {
+  type: "forked" | "deleted" | "renamed";
+  sessionId: string;
+  sessions: SessionSummary[];
+}
+
 export interface WsTunnelMessage {
   type: "tunnel";
   url: string | null;
@@ -224,7 +251,8 @@ export type WsServerMessage =
   | WsSessionsMessage
   | WsHistoryMessage
   | WsStatusMessage
-  | WsTunnelMessage;
+  | WsTunnelMessage
+  | WsSessionMutatedMessage;
 
 // ─── Session Models ───────────────────────────────────────────────────────────
 

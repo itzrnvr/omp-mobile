@@ -23,6 +23,8 @@ export interface OmpSpawnOptions {
   model?: string;
   thinking?: string;
   autoApprove?: boolean;
+  /** auto | ask | readonly — maps to omp approval flags. */
+  approvalMode?: string;
   cwd?: string;
   /** Called immediately for each parsed event (live streaming). */
   onEvent?: (event: OmpEvent) => void;
@@ -35,7 +37,17 @@ function buildArgs(opts: OmpSpawnOptions): string[] {
     args.push("--resume", opts.sessionId);
   }
   if (opts.autoApprove !== false) {
+  if (
+    opts.autoApprove !== false &&
+    opts.approvalMode !== "ask" &&
+    opts.approvalMode !== "readonly"
+  ) {
     args.push("--auto-approve");
+  }
+  if (opts.approvalMode === "ask" || opts.approvalMode === "readonly") {
+    // omp has no pure read-only flag for -p; always-ask denies interactive
+    // approvals in non-interactive mode, which is the closest semantics.
+    args.push("--approval-mode=always-ask");
   }
   if (opts.model) {
     args.push("--model", opts.model);

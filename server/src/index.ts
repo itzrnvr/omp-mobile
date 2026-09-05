@@ -19,6 +19,7 @@
 import { spawnOmp, getOmpVersion } from "./omp.ts";
 import { listSessions, getSessionHistory } from "./sessions.ts";
 import { deleteSession, forkSession } from "./sessions.ts";
+import { renameSession } from "./sessions.ts";
 import { startTunnel, stopTunnel, getTunnelState } from "./tunnel.ts";
 import type {
   WsClientCommand,
@@ -84,6 +85,7 @@ async function handleSend(
     model: cmd.model,
     thinking: cmd.thinking,
     autoApprove: cmd.autoApprove,
+    approvalMode: cmd.approvalMode,
     cwd: cmd.cwd,
     // Stream each event to the client as it arrives (live token deltas).
     onEvent: (event) => {
@@ -180,6 +182,17 @@ async function handleCommand(ws: WebSocket, state: ConnectionState, cmd: WsClien
         sendWs(ws, { type: "deleted", sessionId: cmd.sessionId, sessions });
       } else {
         sendWs(ws, { type: "error", message: `Delete failed: ${cmd.sessionId}` });
+      }
+      break;
+    }
+
+    case "rename_session": {
+      const ok = renameSession(cmd.sessionId, cmd.title);
+      const sessions = await listSessions();
+      if (ok) {
+        sendWs(ws, { type: "renamed", sessionId: cmd.sessionId, sessions });
+      } else {
+        sendWs(ws, { type: "error", message: `Rename failed: ${cmd.sessionId}` });
       }
       break;
     }

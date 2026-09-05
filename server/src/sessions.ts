@@ -360,3 +360,41 @@ export function forkSession(sessionId: string, messageCount: number): string | n
     return null;
   }
 }
+
+/**
+ * Rename a session: rewrite (or insert) the {"type":"title"} line in its JSONL.
+ * The header cache is keyed by mtime+size so the next listing picks it up.
+ */
+export function renameSession(sessionId: string, title: string): boolean {
+  try {
+    const filePath = findSessionFileSync(sessionId);
+    if (!filePath) return false;
+    const lines = readFileSync(filePath, "utf-8").split("\n");
+    let found = false;
+    let sessionIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "title") {
+          obj.title = title;
+          lines[i] = JSON.stringify(obj);
+          found = true;
+          break;
+        }
+        if (obj.type === "session" && sessionIdx === -1) sessionIdx = i;
+      } catch {
+        // skip non-JSON
+      }
+    }
+    if (!found) {
+      const insertAt = sessionIdx >= 0 ? sessionIdx + 1 : 0;
+      lines.splice(insertAt, 0, JSON.stringify({ type: "title", title }));
+    }
+    writeFileSync(filePath, lines.join("\n"), "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}

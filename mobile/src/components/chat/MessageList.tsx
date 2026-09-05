@@ -1,20 +1,19 @@
 /*
- * PURPOSE: Message list grouped into turns, rendering the reference trace UI.
+ * PURPOSE: Message list grouped into turns, rendering the reference layout:
+ *   user bubble → working group (Trace) → hairline sep → markdown answer →
+ *   ActionRow (copy with 1.6s check morph + fork/branch).
  *
  * KEY DECISIONS:
- * - Messages are grouped into turns: a user message, then the assistant
- *   messages + toolResult messages that follow it. toolResult messages are
- *   paired to tool_use blocks by toolCallId and shown inside the trace.
- * - Each turn renders: Trace (collapsible "Worked for Xs" rail of reasoning +
- *   tool steps with args/result boxes), then bubbleless assistant text, then a
- *   muted metadata row (model · duration).
- * - While generating, a live Trace shows streaming thinking + running tools and
- *   the streaming text bubble with a caret.
- * - toolResult / developer / system messages are never rendered standalone.
+ * - Turns group assistant + toolResult messages; toolResult pairs to tool_use
+ *   by toolCallId for the RESULT boxes.
+ * - Auto-scrolls to bottom on new content and every 250ms while generating
+ *   (reference behavior).
+ * - Streaming text shows a caret (▋) while live.
+ * - toolResult / developer / system messages never render standalone.
  */
 
 import React, { useRef, useEffect, useState } from "react";
-import { FlatList, View, StyleSheet, Pressable } from "react-native";
+import { FlatList, View, StyleSheet, Pressable, Text as RNText } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { colors, spacing } from "../../theme";
 import { ChatMessage } from "./ChatMessage";
@@ -29,7 +28,6 @@ import { openChat } from "../../navigation";
 interface Turn {
   assistantMsgs: OmpMessage[];
   results: OmpMessage[];
-  /** Number of transcript messages up to and including this turn (for fork). */
   messageCount: number;
 }
 
@@ -48,7 +46,10 @@ function groupTurns(messages: OmpMessage[]): Item[] {
         last.turn.assistantMsgs.push(msg);
         last.turn.messageCount = running;
       } else {
-        items.push({ kind: "turn", turn: { assistantMsgs: [msg], results: [], messageCount: running } });
+        items.push({
+          kind: "turn",
+          turn: { assistantMsgs: [msg], results: [], messageCount: running },
+        });
       }
     } else if (msg.role === "toolResult") {
       const last = items[items.length - 1];
@@ -57,7 +58,6 @@ function groupTurns(messages: OmpMessage[]): Item[] {
         last.turn.messageCount = running;
       }
     }
-    // developer/system messages are intentionally not rendered
   }
   return items;
 }
@@ -81,8 +81,10 @@ function buildSteps(turn: Turn): TraceStep[] {
         steps.push({
           kind: "tool",
           name: block.name,
+          args: block.arguments ? JSON.stringify(block.arguments, null, 2) : undefined,
           result: resultText || undefined,
           isError: result?.isError,
+          status: result ? "done" : "done",
         });
       }
     }
@@ -110,6 +112,26 @@ function turnMeta(turn: Turn): { model?: string; duration?: number } {
 
 function modelShort(model: string): string {
   return model.split("/").pop() || model;
+}
+
+/** Copy (morphs to blue check for 1.6s) + fork/branch, per reference ActionRow. */
+function ActionRow({ text, onFork }: { text: string; onFork: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const doCopy = () => {
+    Clipboard.setStringAsync(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <View style={styles.actions}>
+      <Pressable onPress={doCopy} accessibilityLabel="Copy response">
+        <Icon name={copied ? "check" : "copy"} size={19} color={copied ? colors.link : "#8e8e8e"} />
+      </Pressable>
+      <Pressable onPress={onFork} accessibilityLabel="Branch conversation from here">
+        <Icon name="branch" size={19} color="#8e8e8e" />
+      </Pressable>
+    </View>
+  );
 }
 
 interface MessageListProps {
@@ -140,10 +162,17 @@ export function MessageList({
   };
 
   useEffect(() => {
-    if (listRef.current) {
-      listRef.current.scrollToEnd({ animated: true });
-    }
+    listRef.current?.scrollToEnd({ animated: true });
   }, [messages.length, streamingText, streamingThinking, toolCalls?.length, notices?.length]);
+
+  // Reference: keep pinned to bottom every 250ms while a turn is working.
+  useEffect(() => {
+    if (!isGenerating) return;
+    const id = setInterval(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 250);
+    return () => clearInterval(id);
+  }, [isGenerating]);
 
   const handleScroll = (event: {
     nativeEvent: {
@@ -157,17 +186,12 @@ export function MessageList({
     setShowScrollButton(distanceFromBottom > 200);
   };
 
-  const scrollToBottom = () => {
-    listRef.current?.scrollToEnd({ animated: true });
-  };
-
   const items = groupTurns(messages);
 
-  // Live steps while generating: streaming thinking + running tools.
   const liveSteps: TraceStep[] = [];
   if (streamingThinking) liveSteps.push({ kind: "reasoning", text: streamingThinking });
   for (const tc of toolCalls || []) {
-    liveSteps.push({ kind: "tool", name: tc.name });
+    liveSteps.push({ kind: "tool", name: tc.name, args: tc.args || undefined, status: tc.status === "done" ? "done" : "running" });
   }
 
   const hasContent = items.length > 0 || !!isGenerating;
@@ -216,44 +240,15 @@ export function MessageList({
             <View style={styles.turn}>
               <Trace steps={steps} durationMs={meta.duration} />
               {text ? (
-                <View style={styles.assistantWrap}>
-                  <MarkdownView markdown={text} />
-                </View>
-              ) : null}
-              {!text && steps.length === 0 && (
-                <Text size="sm" color="textMuted" style={styles.assistantText}>
-                  (empty response)
-                </Text>
-              )}
-              {(meta.model || meta.duration !== undefined) && (
-                <View style={styles.metaRow}>
-                  {meta.model && (
-                    <Text size="xs" color="textMuted">{modelShort(meta.model)}</Text>
-                  )}
-                  {meta.duration !== undefined && (
-                    <Text size="xs" color="textMuted">
-                      {(meta.duration / 1000).toFixed(1) + "s"}
-                    </Text>
-                  )}
-                </View>
-              )}
-              {text ? (
-                <View style={styles.actionsRow}>
-                  <Pressable
-                    style={styles.actionButton}
-                    onPress={() => Clipboard.setStringAsync(text).catch(() => {})}
-                    accessibilityLabel="Copy response"
-                  >
-                    <Icon name="copy" size={15} color={colors.textMuted} />
-                  </Pressable>
-                  <Pressable
-                    style={styles.actionButton}
-                    onPress={() => void handleFork(item.turn)}
-                    accessibilityLabel="Branch conversation from here"
-                  >
-                    <Icon name="branch" size={15} color={colors.textMuted} />
-                  </Pressable>
-                </View>
+                <>
+                  <View style={styles.sep} />
+                  <View style={styles.answerWrap}>
+                    <MarkdownView markdown={text} />
+                  </View>
+                  <ActionRow text={text} onFork={() => void handleFork(item.turn)} />
+                </>
+              ) : steps.length === 0 ? (
+                <RNText style={styles.emptyResponse}>(empty response)</RNText>
               ) : null}
             </View>
           );
@@ -263,8 +258,8 @@ export function MessageList({
             <View style={styles.turn}>
               <Trace steps={liveSteps} isStreaming />
               {streamingText ? (
-                <View style={styles.assistantWrap}>
-                  <MarkdownView markdown={streamingText} isStreaming />
+                <View style={styles.answerWrap}>
+                  <MarkdownView markdown={streamingText + " ▋"} />
                 </View>
               ) : null}
             </View>
@@ -272,7 +267,10 @@ export function MessageList({
         }
       />
       {showScrollButton && (
-        <Pressable style={styles.scrollButton} onPress={scrollToBottom}>
+        <Pressable
+          style={styles.scrollButton}
+          onPress={() => listRef.current?.scrollToEnd({ animated: true })}
+        >
           <Icon name="chevron-down" size={18} color={colors.text} />
         </Pressable>
       )}
@@ -286,17 +284,17 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", justifyContent: "center", paddingVertical: spacing.xl * 3 },
   notices: { gap: 2, paddingBottom: spacing.xs },
   turn: { gap: spacing.xs },
-  assistantText: { lineHeight: 23, marginTop: spacing.sm },
-  assistantWrap: { marginTop: spacing.sm },
-  metaRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs },
-  actionsRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs },
-  actionButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
+  // Full-bleed hairline between the working group and the final answer.
+  sep: {
+    height: 1,
+    backgroundColor: "#2a2a2a",
+    marginVertical: 20,
+    marginLeft: -spacing.lg,
+    marginRight: -spacing.lg,
   },
+  answerWrap: { marginTop: 2 },
+  emptyResponse: { color: colors.textMuted, fontSize: 14, marginTop: spacing.sm },
+  actions: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 18 },
   scrollButton: {
     position: "absolute",
     bottom: spacing.lg,

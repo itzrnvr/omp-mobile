@@ -24,6 +24,7 @@ const KEY_MODEL = 'omp.model';
 const KEY_THINKING = 'omp.thinking';
 
 const KEY_CWD = 'omp.cwd';
+const KEY_RECENT = 'omp.recentModels';
 
 let wsService: WebSocketService | null = null;
 /** Resolves the pending forkSession() promise when the server replies 'forked'. */
@@ -81,6 +82,24 @@ interface StoreState {
   deleteSession: (sessionId: string) => void;
   /** Fork a session up to messageCount messages; resolves with the new session id. */
   forkSession: (sessionId: string, messageCount: number) => Promise<string | null>;
+  /** Tool approval mode (reference shield popover). */
+  approvalMode: "auto" | "ask" | "readonly";
+  setApprovalMode: (mode: "auto" | "ask" | "readonly") => void;
+  /** Latest assistant-turn usage for the context popover. */
+  lastUsage: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalTokens: number;
+  } | null;
+  /** Pending attachment paths shown as chips above the composer. */
+  attachments: string[];
+  addAttachment: (path: string) => void;
+  clearAttachments: () => void;
+  renameSession: (sessionId: string, title: string) => void;
+  /** Recently used model values (most recent first) for the picker strip. */
+  recentModels: string[];
 
   // hydration
   hydrate: () => Promise<void>;
@@ -188,6 +207,22 @@ export const useStore = create<StoreState>((set, get) => {
         const usage = msg?.usage;
         if (usage && typeof usage === "object" && "totalTokens" in usage && typeof usage.totalTokens === "number") {
           set({ contextTokens: usage.totalTokens });
+          const u = usage as {
+            input?: number;
+            output?: number;
+            cacheRead?: number;
+            cacheWrite?: number;
+            totalTokens?: number;
+          };
+          set({
+            lastUsage: {
+              input: u.input ?? 0,
+              output: u.output ?? 0,
+              cacheRead: u.cacheRead ?? 0,
+              cacheWrite: u.cacheWrite ?? 0,
+              totalTokens: u.totalTokens ?? 0,
+            },
+          });
         }
 
         const { streamingText, streamingThinking, messages, currentModel } = get();
@@ -371,7 +406,11 @@ export const useStore = create<StoreState>((set, get) => {
     contextTokens: 0,
 
     setSelectedModel: (model) => {
-      set({ selectedModel: model });
+      set((s) => ({
+        selectedModel: model,
+        recentModels: [model, ...s.recentModels.filter((m) => m !== model)].slice(0, 5),
+      }));
+      AsyncStorage.setItem(KEY_RECENT, JSON.stringify([model, ...get().recentModels.filter((m) => m !== model)].slice(0, 5))).catch(() => {});
       AsyncStorage.setItem(KEY_MODEL, model).catch(() => {});
     },
     setThinkingLevel: (level) => {
@@ -408,7 +447,8 @@ export const useStore = create<StoreState>((set, get) => {
         sessionId: state.currentSessionId ?? null,
         model,
         thinking,
-        autoApprove: opts?.autoApprove,
+        autoApprove: state.approvalMode === "auto",
+        approvalMode: state.approvalMode,
         cwd: opts?.cwd ?? state.selectedCwd ?? undefined,
       });
     },
@@ -470,6 +510,7 @@ export const useStore = create<StoreState>((set, get) => {
           break;
         }
         case 'deleted':
+        case 'renamed':
           set({ sessions: msg.sessions, loadingSessions: false });
           break;
         case 'history':
@@ -528,11 +569,22 @@ export const useStore = create<StoreState>((set, get) => {
           AsyncStorage.getItem(KEY_THINKING),
           AsyncStorage.getItem(KEY_CWD),
         ]);
+        let recents: string[] = [];
+        try {
+          const raw = await AsyncStorage.getItem(KEY_RECENT);
+          if (raw) {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed)) recents = parsed.filter((x): x is string => typeof x === "string");
+          }
+        } catch {
+          recents = [];
+        }
         set({
           token: token ?? 'omp-mobile-personal-2026',
           selectedModel: model ?? null,
           thinkingLevel: (thinking as ThinkingLevel) ?? 'high',
           selectedCwd: cwd ?? null,
+          recentModels: recents,
         });
       } catch {
         set({ token: 'omp-mobile-personal-2026' });
@@ -540,6 +592,18 @@ export const useStore = create<StoreState>((set, get) => {
       // Auto-connect via the persistent tunnel pointer (no manual URL entry).
       void bootstrapConnect(0);
     },
+
+    approvalMode: "ask",
+    setApprovalMode: (mode) => set({ approvalMode: mode }),
+    lastUsage: null,
+    attachments: [],
+    addAttachment: (path) => set((s) => ({ attachments: [...s.attachments, path] })),
+    clearAttachments: () => set({ attachments: [] }),
+    renameSession: (sessionId, title) => {
+      wsService?.send({ type: "rename_session", sessionId, title });
+    },
+
+    recentModels: [],
   };
 });
 

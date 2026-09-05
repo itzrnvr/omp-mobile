@@ -132,12 +132,22 @@ export interface ToolCallInfo {
 // ─── WebSocket protocol envelopes ──────────────────────────────────────────────
 
 export type WsClientCommand =
-  | { type: 'send'; content: string; sessionId?: string | null; model?: string; thinking?: string; autoApprove?: boolean; cwd?: string }
+  | {
+      type: 'send';
+      content: string;
+      sessionId?: string | null;
+      model?: string;
+      thinking?: string;
+      autoApprove?: boolean;
+      approvalMode?: 'auto' | 'ask' | 'readonly';
+      cwd?: string;
+    }
   | { type: 'list_sessions' }
   | { type: 'get_history'; sessionId: string }
   | { type: 'get_status' }
   | { type: 'fork_session'; sessionId: string; messageCount: number }
   | { type: 'delete_session'; sessionId: string }
+  | { type: 'rename_session'; sessionId: string; title: string }
   | { type: 'cancel' }
   | { type: 'start_tunnel' }
   | { type: 'stop_tunnel' };
@@ -160,14 +170,15 @@ export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 export interface ModelPreset {
   label: string;
   value: string;
+  desc?: string;
 }
 
 export const MODEL_PRESETS: ModelPreset[] = [
-  { label: 'GLM-5.2', value: 'wandb-proxy/zai-org/GLM-5.2' },
-  { label: 'Qwen 3.8 Max', value: 'dashscope-china/qwen3.8-max' },
-  { label: 'GLM-5.2 Smol', value: 'synthetic-openai/hf:zai-org/GLM-5.2' },
-  { label: 'MiniMax M3', value: 'minimax-china-proxy/MiniMax-M3' },
-  { label: 'Muse Spark', value: 'meta/muse-spark-1.2' },
+  { label: 'GLM-5.2', value: 'wandb-proxy/zai-org/GLM-5.2', desc: 'Most capable — best for agentic tasks' },
+  { label: 'Qwen 3.8 Max', value: 'dashscope-china/qwen3.8-max', desc: 'Fast — great for everyday requests' },
+  { label: 'GLM-5.2 Smol', value: 'synthetic-openai/hf:zai-org/GLM-5.2', desc: 'Lightest — quickest replies' },
+  { label: 'MiniMax M3', value: 'minimax-china-proxy/MiniMax-M3', desc: 'Long context — strong reasoning' },
+  { label: 'Muse Spark', value: 'meta/muse-spark-1.2', desc: 'Balanced — general purpose' },
 ];
 
 export const THINKING_LEVELS = ['off', 'low', 'medium', 'high', 'max'] as const;

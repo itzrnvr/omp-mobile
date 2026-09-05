@@ -1,15 +1,9 @@
 /*
- * PURPOSE: Global Icon component — real vector icons via @expo/vector-icons.
+ * PURPOSE: Global Icon component — real vector icons via @expo/vector-icons
+ * (Ionicons), with a small named API so call sites stay stable.
  *
- * HISTORY:
- * - Ionicons rendered blank in the DEV client (font not loaded), so we briefly
- *   fell back to unicode glyphs. That looked like placeholder slop.
- * - Release builds bundle the icon font natively, so Ionicons work there.
- *   This component keeps a small named API and maps to Ionicons names, so all
- *   call sites stay stable.
- *
- * GOTCHA: if icons ever render blank again, check whether the running build is
- * a dev client (fonts load from Metro there and can fail) vs release (bundled).
+ * HISTORY: Ionicons rendered blank until expo-font loaded the font explicitly
+ * (useFonts(Ionicons.font) at App root); release builds bundle it natively.
  */
 
 import React from "react";
@@ -38,7 +32,18 @@ export type IconName =
   | "cloud-offline"
   | "copy"
   | "retry"
-  | "search";
+  | "search"
+  | "sparkle"
+  | "wrench"
+  | "menu"
+  | "paperclip"
+  | "camera"
+  | "link"
+  | "mic"
+  | "shield"
+  | "activity"
+  | "rename"
+  | "trash";
 
 const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   add: "add",
@@ -64,6 +69,17 @@ const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   copy: "copy-outline",
   retry: "refresh",
   search: "search",
+  sparkle: "sparkles",
+  wrench: "construct-outline",
+  menu: "menu",
+  paperclip: "attach",
+  camera: "camera-outline",
+  link: "link-outline",
+  mic: "mic-outline",
+  shield: "shield-checkmark-outline",
+  activity: "pulse-outline",
+  rename: "create-outline",
+  trash: "trash-outline",
 };
 
 interface IconProps {
