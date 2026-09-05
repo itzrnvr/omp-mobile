@@ -84,3 +84,19 @@ P5 Verify — emulator captures per state vs the 7 screenshots; tablet install; 
 - Category-level context breakdown (Messages/MCP tools/…): OMP usage events expose only
   input/output/cache totals; context popover shows those honestly in the same layout.
 - User tool-request cards (Leaf): no user-tool-request concept in our protocol.
+
+## STATUS (2026-09-05) — implemented & verified on emulator + tablet
+- P1..P5 complete. Commits: 2fe9a25, fe90f7a, 050f2b8, 0f4060c.
+- Touch bug root cause: Drawer rendered an opacity-0 backdrop Pressable while
+  hidden, swallowing every touch. Fix: `if (!visible) return null` in Drawer
+  (see Drawer.tsx comment). Same class of bug: any always-mounted invisible
+  Pressable/overlay will eat touches — never mount hidden overlays.
+- Voice: native @react-native-voice/voice removed (legacy support libs needed
+  jetifier and coincided with build failures); dictation now via WebView
+  Web-Speech API (DictationSheet.tsx).
+- Known limits: block math typesets via KaTeX CDN in a WebView (needs network);
+  inline math renders as mono text; context popover shows real usage rows
+  instead of the reference's category breakdown (OMP exposes no breakdown).
+- Remaining audit gaps (not implemented): session tree/branch navigation UI,
+  manual /compact trigger, scoped-models management, export/import/share,
+  settings panel parity, transcript search.
