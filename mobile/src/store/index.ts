@@ -101,6 +101,7 @@ interface StoreState {
   errorToast: string | null;
   /** Steers acknowledged by the bridge, awaiting TUI boundary delivery. */
   pendingSteers: string[];
+  steerModes: ("mid" | "idle")[];
   removePendingSteer: (index: number) => void;
   lastSendContent: string | null;
   /** {shown,total} when the loaded history was capped for mobile. */
@@ -433,6 +434,7 @@ export const useStore = create<StoreState>((set, get) => {
     historySig: null,
     errorToast: null,
     pendingSteers: [],
+    steerModes: [],
     lastSendContent: null,
     historyTruncated: null,
     activeSessionIds: {},
@@ -659,12 +661,16 @@ export const useStore = create<StoreState>((set, get) => {
           // Bridge routed our send into the TUI turn as steering; it will
           // echo back as a user message via ext events. Ack above composer.
           const txt = (get().lastSendContent || '').trim();
-          set((s) => ({ pendingSteers: txt ? [...s.pendingSteers, txt] : s.pendingSteers }));
+          if (txt) set((s) => ({ pendingSteers: [...s.pendingSteers, txt] }));
           set({ errorToast: 'Steering queued - the TUI picks it up at its next turn boundary.' });
           setTimeout(() => set({ errorToast: null }), 4000);
           // Chip stays until the TUI confirms delivery (ext agent_start);
           // no timeout - a timed-out chip would read as lost while the steer
           // still lands at a later boundary (2026-09-05 advisory).
+          break;
+        }
+        case 'ext_steer_ack': {
+          set((s) => ({ steerModes: [...s.steerModes, msg.mode] }));
           break;
         }
         case 'ext_session': {
@@ -684,13 +690,25 @@ export const useStore = create<StoreState>((set, get) => {
           if (!sid || sid !== get().currentSessionId) break;
           const ev = msg.event;
           if (ev.type === 'agent_start') {
-            set((s) => ({
-              isGenerating: true,
-              liveSteps: [],
-              streamingText: '',
-              streamingThinking: '',
-              pendingSteers: s.pendingSteers.slice(1),
-            }));
+            set((s) => {
+              // idle-queued steers deliver at this boundary; mid steers that
+              // missed their user-echo also clear here as a fallback.
+              const drop = s.steerModes[0] !== undefined ? 1 : 0;
+              return {
+                isGenerating: true,
+                liveSteps: [],
+                streamingText: '',
+                streamingThinking: '',
+                pendingSteers: s.pendingSteers.slice(drop),
+                steerModes: s.steerModes.slice(drop),
+              };
+            });
+          }
+          if (ev.type === 'message_start' && ev.message && (ev.message as { role?: string }).role === 'user') {
+            set((s) => {
+              if (s.steerModes[0] !== 'mid') return s;
+              return { pendingSteers: s.pendingSteers.slice(1), steerModes: s.steerModes.slice(1) };
+            });
           }
           processEvent(ev, sid);
           if (ev.type === 'agent_end') {

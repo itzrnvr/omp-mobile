@@ -401,6 +401,10 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     }
     return;
   }
+  if (m.type === 'ext_steer_ack') {
+    broadcastMobile({ type: 'ext_steer_ack', mode: m.mode || 'idle' });
+    return;
+  }
   if (m.type === 'ext_event') {
     const sid = m.sessionId || conn.sessionId;
     if (!sid) return;
