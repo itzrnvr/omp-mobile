@@ -3,32 +3,23 @@
  *   card #2d2d2d r28 padding 19/16/13; input 18px placeholder #606060;
  *   row gap 17: [+] attach popover · [shield+chev, blue/orange] mode popover ·
  *   [activity while working] · [context button → ContextPopover] · spacer ·
- *   [model 17/500 + chev] model sheet · [mic, listening ring] · [send 38px circle].
+ *   [model 17/500 + chev] model sheet · [mic → DictationSheet] · [send 38px circle].
  *   Attachment chips render above the input.
  *
  * KEY DECISIONS:
  * - Popovers are hosted here (absolute above the row) so they anchor correctly.
- * - Mic uses @react-native-voice/voice with runtime RECORD_AUDIO permission;
- *   transcripts append to the input. Listening shows the pulsing ring.
+ * - Mic uses a WebView Web-Speech dictation sheet (no native voice module —
+ *   the native lib dragged in legacy support libs and broke the build).
  * - Shield color: blue (#7cb6f0) for ask/auto, orange for readonly (image 7).
  */
 
-import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  Animated,
-  PermissionsAndroid,
-  Platform,
-  Text as RNText,
-} from "react-native";
-import Voice, { type SpeechResultsEvent } from "@react-native-voice/voice";
+import React, { useState } from "react";
+import { View, StyleSheet, Pressable, TextInput, Text as RNText } from "react-native";
 import { colors, spacing } from "../../theme";
 import { Icon } from "../ui/Icon";
 import { PopoverMenu } from "../ui/PopoverMenu";
 import { ContextPopover } from "./ContextPopover";
+import { DictationSheet } from "./DictationSheet";
 import { useStore } from "../../store";
 
 export interface ChatInputProps {
@@ -48,27 +39,6 @@ export interface ChatInputProps {
 
 type Panel = "plus" | "shield" | "ctx" | null;
 
-function PulseRing() {
-  const scale = useRef(new Animated.Value(0.75)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.parallel([
-        Animated.timing(scale, { toValue: 1.45, duration: 1200, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0, duration: 1200, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scale, opacity]);
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.pulseRing, { transform: [{ scale }], opacity }]}
-    />
-  );
-}
-
 export function ChatInput({
   value,
   onChangeText,
@@ -84,36 +54,13 @@ export function ChatInput({
   onPasteLink,
 }: ChatInputProps) {
   const [panel, setPanel] = useState<Panel>(null);
-  const [listening, setListening] = useState(false);
+  const [dictationOpen, setDictationOpen] = useState(false);
   const { approvalMode, setApprovalMode, attachments, clearAttachments, lastUsage } = useStore();
 
   const canSend = value.trim().length > 0 && !isGenerating;
 
-  useEffect(() => {
-    const onResults = (e: SpeechResultsEvent) => {
-      const text = e.value?.join(" ") ?? "";
-      if (text) onChangeText((value ? value + " " : "") + text);
-    };
-    Voice.onSpeechResults = onResults;
-    return () => {
-      Voice.onSpeechResults = () => {};
-    };
-  }, [value, onChangeText]);
-
-  const toggleMic = async () => {
-    if (listening) {
-      await Voice.stop().catch(() => {});
-      setListening(false);
-      return;
-    }
-    if (Platform.OS === "android") {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      );
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
-    }
-    await Voice.start("en-US").catch(() => {});
-    setListening(true);
+  const onTranscript = (text: string) => {
+    onChangeText((value ? value + " " : "") + text);
   };
 
   const shieldColor = approvalMode === "readonly" ? "#f59e0b" : colors.link;
@@ -220,11 +167,10 @@ export function ChatInput({
           </Pressable>
           <Pressable
             style={styles.micButton}
-            onPress={() => void toggleMic()}
+            onPress={() => setDictationOpen(true)}
             accessibilityLabel="Voice input"
           >
-            {listening && <PulseRing />}
-            <Icon name="mic" size={22} color={listening ? colors.link : "#a3a3a3"} />
+            <Icon name="mic" size={22} color="#a3a3a3" />
           </Pressable>
           {isGenerating ? (
             <Pressable
@@ -246,6 +192,12 @@ export function ChatInput({
           )}
         </View>
       </View>
+
+      <DictationSheet
+        visible={dictationOpen}
+        onClose={() => setDictationOpen(false)}
+        onTranscript={onTranscript}
+      />
     </View>
   );
 }
@@ -304,14 +256,6 @@ const styles = StyleSheet.create({
   modelButton: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 150 },
   modelLabel: { fontSize: 17, fontWeight: "500", color: "#ececec" },
   micButton: { alignItems: "center", justifyContent: "center" },
-  pulseRing: {
-    position: "absolute",
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 2,
-    borderColor: "rgba(124,182,240,0.55)",
-  },
   send: {
     width: 38,
     height: 38,

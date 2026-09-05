@@ -36,7 +36,6 @@ function buildArgs(opts: OmpSpawnOptions): string[] {
   if (opts.sessionId) {
     args.push("--resume", opts.sessionId);
   }
-  if (opts.autoApprove !== false) {
   if (
     opts.autoApprove !== false &&
     opts.approvalMode !== "ask" &&
