@@ -44,7 +44,7 @@ export interface ChatInputProps {
 
 type Panel = "plus" | "ctx" | null;
 
-export function ChatInput({
+function ChatInputBase({
   value,
   onChangeText,
   onSend,
@@ -268,3 +268,5 @@ const styles = StyleSheet.create({
   sendRemote: { borderWidth: 2, borderColor: "#9ccafa" },
   sendStop: { backgroundColor: colors.error },
 });
+
+export const ChatInput = React.memo(ChatInputBase);

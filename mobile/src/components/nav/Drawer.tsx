@@ -65,7 +65,7 @@ export interface DrawerProps {
   onOpenSettings: () => void;
 }
 
-export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSettings }: DrawerProps) {
+function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings }: DrawerProps) {
   const insets = useSafeAreaInsets();
   // Selectors only — whole-store subscription re-rendered the drawer on every
   // streaming delta and made it lag while a turn ran (2026-09-05).
@@ -384,3 +384,5 @@ const styles = StyleSheet.create({
   },
   footerText: { fontSize: 14, color: colors.textSecondary },
 });
+
+export const Drawer = React.memo(DrawerBase);

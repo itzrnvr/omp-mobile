@@ -37,7 +37,7 @@ export interface ModelSheetProps {
   onClose: () => void;
 }
 
-export function ModelSheet({ visible, onClose }: ModelSheetProps) {
+function ModelSheetBase({ visible, onClose }: ModelSheetProps) {
   const {
     selectedModel,
     setSelectedModel,
@@ -322,3 +322,5 @@ const styles = StyleSheet.create({
   },
   folderTriggerText: { flex: 1, fontSize: 13, color: colors.textSecondary },
 });
+
+export const ModelSheet = React.memo(ModelSheetBase);

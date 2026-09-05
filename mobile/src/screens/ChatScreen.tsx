@@ -10,7 +10,7 @@
  * - Hardware back closes any open overlay first.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Keyboard } from "react-native";
 import {
   View,
@@ -154,6 +154,19 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     if (text) setInput((v) => (v ? v + " " : "") + text);
   };
 
+  // Stable handler identities so memoized children (Drawer/ChatInput/
+  // ModelSheet) skip re-render on streaming deltas (2026-09-05 perf).
+  const onOpenModelCb = useCallback(() => setSheetOpen(true), []);
+  const onAttachFilesCb = useCallback(() => { void onAttachFiles(); }, [onAttachFiles]);
+  const onTakePhotoCb = useCallback(() => { void onTakePhoto(); }, [onTakePhoto]);
+  const onPasteLinkCb = useCallback(() => { void onPasteLink(); }, [onPasteLink]);
+  const onCloseSheetCb = useCallback(() => setSheetOpen(false), []);
+  const onCloseDrawerCb = useCallback(() => setDrawerOpen(false), []);
+  const onOpenSessionCb = useCallback((id: string) => openChat(id), [openChat]);
+  const onNewChatCb = useCallback(() => openChat(), [openChat]);
+  const onOpenSettingsCb = useCallback(() => setSettingsOpen(true), []);
+  const onCloseSettingsCb = useCallback(() => setSettingsOpen(false), []);
+
   if (wsStatus !== "connected") {
     return (
       <View style={styles.disconnected}>
@@ -167,6 +180,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
       </View>
     );
   }
+
 
   const modelLabel =
     (serverStatus?.models || []).find((m) => m.value === selectedModel)?.label ||
@@ -222,23 +236,23 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         onRemoveSteer={removeSteer}
         bottomInset={kbHeight > 0 ? kbHeight : insets.bottom}
         modelLabel={modelLabel + " · " + thinkingLevel}
-        onOpenModel={() => setSheetOpen(true)}
-        onAttachFiles={() => void onAttachFiles()}
-        onTakePhoto={() => void onTakePhoto()}
-        onPasteLink={() => void onPasteLink()}
+        onOpenModel={onOpenModelCb}
+        onAttachFiles={onAttachFilesCb}
+        onTakePhoto={onTakePhotoCb}
+        onPasteLink={onPasteLinkCb}
       />
 
-      <ModelSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <ModelSheet visible={sheetOpen} onClose={onCloseSheetCb} />
       <Drawer
         visible={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onOpenSession={(id) => openChat(id)}
-        onNewChat={() => openChat()}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onClose={onCloseDrawerCb}
+        onOpenSession={onOpenSessionCb}
+        onNewChat={onNewChatCb}
+        onOpenSettings={onOpenSettingsCb}
       />
       <Sheet
         visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={onCloseSettingsCb}
         panelStyle={{ height: "78%" }}
       >
         {/* SettingsScreen provides its own ScrollView; nesting another one
