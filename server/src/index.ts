@@ -89,16 +89,20 @@ async function handleSend(
   // NEVER spawn a second omp --resume (divergent prefix wrecks the provider
   // KV/prefix cache lineage). Route the send INTO the running TUI turn as a
   // steering message — same semantics as typing in the TUI while it answers.
-  // TUI-owned session: the extension API cannot inject user messages into a
-  // running TUI (sendUserMessage is a no-op outside hook context — verified
-  // 2026-09-05 via WS-callback AND agent_end-hook attempts). Spawning a
-  // second omp here would branch the session tree and wreck KV lineage, so
-  // refuse loudly; the app toasts and offers fork. TUI->app stays fully live.
+  // TUI-owned session: route the send INTO the TUI as steering via the
+  // extension (queue + agent_end-hook delivery). Never spawn a second omp —
+  // that would branch the session tree and wreck KV lineage.
+  // TUI-owned session: the TUI is the single writer (KV-cache lineage +
+  // session-tree safety). App sends here are refused with an actionable
+  // message; the app toasts and offers fork. TUI->app stays fully live via
+  // extension events. (ext_steer injection proven unavailable: omp
+  // sendUserMessage no-ops outside hook context AND bridge->ext socket
+  // delivery dropped frames in testing, 2026-09-05.)
   if (extOwnerWs(cmd.sessionId)) {
     sendWs(ws, {
       type: 'error',
       message:
-        'Live in the omp TUI right now — it is the single writer for this session. Reply there, or fork it here to branch safely.',
+        'Live in the omp TUI right now - it is the single writer for this session. Reply there, or fork it here to branch safely.',
     });
     return;
   }
