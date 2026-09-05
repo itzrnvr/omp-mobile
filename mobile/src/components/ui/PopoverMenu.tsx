@@ -1,14 +1,15 @@
 /*
- * PURPOSE: Anchored popover menu, 1:1 with the reference: card floats 14px above
- * its anchor (bottom-aligned), #2d2d2d, border #3d3d3d, r14, padding 6, shadow
- * 0 14px 36px rgba(0,0,0,.55), pop-in .16s (fade + translateY(7) + scale .97,
- * origin bottom-left). Items: padding 10/12, r9, pressed #3a3a3a, icon #8e8e8e,
- * blue check with opacity toggle on the selected row. Invisible backdrop closes.
+ * PURPOSE: Anchored popover menu, 1:1 with the reference: card floats above its
+ * anchor (offsetBottom from container bottom), #2d2d2d, border #3d3d3d, r14,
+ * padding 6, shadow 0 14px 36px rgba(0,0,0,.55), pop-in .16s (fade +
+ * translateY(7) + scale .97). Items: padding 10/12, r9, pressed #3a3a3a,
+ * icon #8e8e8e, blue check with opacity toggle on the selected row.
+ * Renders null when hidden so it never intercepts touches.
  */
 
 import React, { useEffect, useRef } from "react";
 import { View, StyleSheet, Pressable, Animated } from "react-native";
-import { colors, spacing, radii } from "../../theme";
+import { colors, spacing } from "../../theme";
 import { Text } from "../ui/Text";
 import { Icon, type IconName } from "../ui/Icon";
 
@@ -24,9 +25,17 @@ export interface PopoverMenuProps {
   onClose: () => void;
   items: PopoverItem[];
   align?: "left" | "right";
+  /** Distance from the container bottom to anchor the card above. */
+  offsetBottom?: number;
 }
 
-export function PopoverMenu({ visible, onClose, items, align = "left" }: PopoverMenuProps) {
+export function PopoverMenu({
+  visible,
+  onClose,
+  items,
+  align = "left",
+  offsetBottom = 14,
+}: PopoverMenuProps) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -46,12 +55,11 @@ export function PopoverMenu({ visible, onClose, items, align = "left" }: Popover
         style={[
           styles.card,
           align === "left" ? styles.cardLeft : styles.cardRight,
+          { bottom: offsetBottom },
           {
             opacity: anim,
             transform: [
-              {
-                translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [7, 0] }),
-              },
+              { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [7, 0] }) },
               { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) },
             ],
           },
@@ -85,7 +93,6 @@ const styles = StyleSheet.create({
   scrim: { ...StyleSheet.absoluteFillObject },
   card: {
     position: "absolute",
-    bottom: 14,
     minWidth: 232,
     backgroundColor: "#2d2d2d",
     borderWidth: 1,

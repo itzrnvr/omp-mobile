@@ -73,6 +73,10 @@ export function Drawer({ visible, onClose, onOpenSession, onNewChat, onOpenSetti
       )
     : sessions;
 
+  // IMPORTANT: return null when hidden. The backdrop Pressable at opacity 0
+  // would otherwise swallow every touch on the screen (2026-09-05 touch bug).
+  if (!visible) return null;
+
   return (
     <View style={styles.root} pointerEvents="box-none">
       <Animated.View style={[styles.backdrop, { opacity: fade }]}>

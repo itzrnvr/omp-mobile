@@ -7,9 +7,9 @@
  *   Attachment chips render above the input.
  *
  * KEY DECISIONS:
- * - Popovers are hosted here (absolute above the row) so they anchor correctly.
- * - Mic uses a WebView Web-Speech dictation sheet (no native voice module —
- *   the native lib dragged in legacy support libs and broke the build).
+ * - Popovers render as direct children AFTER the card (they paint above it) and
+ *   return null when hidden, so nothing intercepts touches on the composer.
+ * - Mic uses a WebView Web-Speech dictation sheet (no native voice module).
  * - Shield color: blue (#7cb6f0) for ask/auto, orange for readonly (image 7).
  */
 
@@ -55,9 +55,11 @@ export function ChatInput({
 }: ChatInputProps) {
   const [panel, setPanel] = useState<Panel>(null);
   const [dictationOpen, setDictationOpen] = useState(false);
+  const [cardH, setCardH] = useState(0);
   const { approvalMode, setApprovalMode, attachments, clearAttachments, lastUsage } = useStore();
 
   const canSend = value.trim().length > 0 && !isGenerating;
+  const offset = cardH + spacing.md + bottomInset + 14;
 
   const onTranscript = (text: string) => {
     onChangeText((value ? value + " " : "") + text);
@@ -72,42 +74,7 @@ export function ChatInput({
 
   return (
     <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
-      {/* popovers anchored above the composer card */}
-      <View style={styles.popoverHost} pointerEvents="box-none">
-        <PopoverMenu
-          visible={panel === "plus"}
-          onClose={() => setPanel(null)}
-          items={[
-            { label: "Attach files", icon: "paperclip", onPress: onAttachFiles },
-            { label: "Take a photo", icon: "camera", onPress: onTakePhoto },
-            { label: "Paste a link", icon: "link", onPress: onPasteLink },
-          ]}
-        />
-        <PopoverMenu
-          visible={panel === "shield"}
-          onClose={() => setPanel(null)}
-          items={[
-            {
-              label: "Auto-run tools",
-              checked: approvalMode === "auto",
-              onPress: () => setApprovalMode("auto"),
-            },
-            {
-              label: "Ask before running",
-              checked: approvalMode === "ask",
-              onPress: () => setApprovalMode("ask"),
-            },
-            {
-              label: "Read-only mode",
-              checked: approvalMode === "readonly",
-              onPress: () => setApprovalMode("readonly"),
-            },
-          ]}
-        />
-        <ContextPopover visible={panel === "ctx"} onClose={() => setPanel(null)} />
-      </View>
-
-      <View style={styles.card}>
+      <View style={styles.card} onLayout={(e) => setCardH(e.nativeEvent.layout.height)}>
         {attachments.length > 0 && (
           <View style={styles.chips}>
             {attachments.map((a, i) => (
@@ -193,6 +160,41 @@ export function ChatInput({
         </View>
       </View>
 
+      {/* popovers render after the card so they paint above it; hidden = null */}
+      <PopoverMenu
+        visible={panel === "plus"}
+        onClose={() => setPanel(null)}
+        offsetBottom={offset}
+        items={[
+          { label: "Attach files", icon: "paperclip", onPress: onAttachFiles },
+          { label: "Take a photo", icon: "camera", onPress: onTakePhoto },
+          { label: "Paste a link", icon: "link", onPress: onPasteLink },
+        ]}
+      />
+      <PopoverMenu
+        visible={panel === "shield"}
+        onClose={() => setPanel(null)}
+        offsetBottom={offset}
+        items={[
+          {
+            label: "Auto-run tools",
+            checked: approvalMode === "auto",
+            onPress: () => setApprovalMode("auto"),
+          },
+          {
+            label: "Ask before running",
+            checked: approvalMode === "ask",
+            onPress: () => setApprovalMode("ask"),
+          },
+          {
+            label: "Read-only mode",
+            checked: approvalMode === "readonly",
+            onPress: () => setApprovalMode("readonly"),
+          },
+        ]}
+      />
+      <ContextPopover visible={panel === "ctx"} onClose={() => setPanel(null)} offsetBottom={offset} />
+
       <DictationSheet
         visible={dictationOpen}
         onClose={() => setDictationOpen(false)}
@@ -204,7 +206,6 @@ export function ChatInput({
 
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 14, backgroundColor: colors.bg },
-  popoverHost: { position: "absolute", left: 0, right: 0, bottom: 70, top: 0 },
   card: {
     backgroundColor: "#2d2d2d",
     borderRadius: 28,

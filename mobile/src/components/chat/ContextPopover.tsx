@@ -1,6 +1,6 @@
 /*
  * PURPOSE: Context usage popover (reference "Context windows" card, images 5/7),
- * anchored above the composer with the same chrome as PopoverMenu.
+ * anchored above the composer via offsetBottom. Renders null when hidden.
  *
  * HONESTY NOTE: the reference shows a category breakdown (Messages / MCP tools /
  * …) and a used/limit header. OMP usage events expose only input / output /
@@ -22,9 +22,10 @@ function fmt(n: number): string {
 export interface ContextPopoverProps {
   visible: boolean;
   onClose: () => void;
+  offsetBottom?: number;
 }
 
-export function ContextPopover({ visible, onClose }: ContextPopoverProps) {
+export function ContextPopover({ visible, onClose, offsetBottom = 14 }: ContextPopoverProps) {
   const { lastUsage } = useStore();
   const anim = useRef(new Animated.Value(0)).current;
 
@@ -57,6 +58,7 @@ export function ContextPopover({ visible, onClose }: ContextPopoverProps) {
       <Animated.View
         style={[
           styles.card,
+          { bottom: offsetBottom },
           {
             opacity: anim,
             transform: [
@@ -99,7 +101,6 @@ const styles = StyleSheet.create({
   scrim: { ...StyleSheet.absoluteFillObject },
   card: {
     position: "absolute",
-    bottom: 14,
     left: spacing.md,
     right: spacing.md,
     backgroundColor: "#2d2d2d",
