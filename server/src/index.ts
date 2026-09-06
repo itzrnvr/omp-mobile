@@ -410,6 +410,10 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     }
     return;
   }
+  if (m.type === 'ext_entry' || m.type === 'ext_queue') {
+    broadcastMobile({ type: m.type, sessionId: conn.sessionId || null, entry: m.entry, pending: m.pending });
+    return;
+  }
   if (m.type === 'ext_steer_ack') {
     broadcastMobile({ type: 'ext_steer_ack', mode: m.mode || 'idle' });
     return;
@@ -538,6 +542,12 @@ async function handleRest(req: Request): Promise<Response> {
 
   // Folder picker backend (2026-09-05): list directories + create folders so
   // the mobile app gets a real navigator instead of a text input.
+  if (url.pathname === "/api/ext-debug" && req.method === "GET") {
+    const list: { sessionId: string | null; proto: number; ready: number; age: number }[] = [];
+    for (const [ws, c] of extConns) list.push({ sessionId: c.sessionId, proto: c.proto || 0, ready: ws.readyState, age: Math.round((Date.now() - ((ws as unknown as { __ompConnectedAt?: number }).__ompConnectedAt || Date.now())) / 1000) });
+    return new Response(JSON.stringify(list), { headers: { "Content-Type": "application/json" } });
+  }
+
   if (url.pathname === "/api/sync-status" && req.method === "GET") {
     const live: { sessionId: string; proto: number; running: boolean }[] = [];
     for (const c of extConns.values()) {
@@ -623,6 +633,7 @@ const server = Bun.serve({
     open(ws: WebSocket) {
       const data = (ws as unknown as { data?: { ext?: boolean } }).data;
       if (data?.ext) {
+        (ws as unknown as { __ompConnectedAt: number }).__ompConnectedAt = Date.now();
         extConns.set(ws, { sessionId: null });
         console.log(`[ext] connected (${extConns.size} total)`);
         return;

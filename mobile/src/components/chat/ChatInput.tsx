@@ -184,18 +184,24 @@ function ChatInputBase({
           >
             <Icon name="mic" size={22} color="#a3a3a3" />
           </Pressable>
-          <Pressable
-            style={[
-              styles.send,
-              canSend && styles.sendReady,
-              remoteActive && isGenerating && styles.sendRemote,
-            ]}
-            onPress={onSend}
-            disabled={!canSend}
-            accessibilityLabel="Send"
-          >
-            <Icon name="send" size={19} color="#171717" />
-          </Pressable>
+          {isGenerating && !value.trim() ? (
+            <Pressable
+              style={[styles.send, styles.sendStop]}
+              onPress={onCancel}
+              accessibilityLabel="Stop"
+            >
+              <Icon name="stop" size={16} color="#ffffff" />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.send, canSend && styles.sendReady]}
+              onPress={onSend}
+              disabled={!canSend}
+              accessibilityLabel="Send"
+            >
+              <Icon name="send" size={19} color="#171717" />
+            </Pressable>
+          )}
         </View>
       </View>
 

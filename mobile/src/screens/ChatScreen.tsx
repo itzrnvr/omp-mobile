@@ -80,6 +80,10 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     restoreOrNew,
     steerQueue,
     removeSteer,
+    pendingSteers,
+    removePendingSteer,
+    steerModes,
+    tuiQueuePending,
     externalActive,
     externalLive,
     currentSessionId,
@@ -194,17 +198,33 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   return (
     <View style={styles.container}>
       <View style={[styles.topbar, { paddingTop: Math.max(insets.top, spacing.sm) }]}>
-        <Pressable onPress={() => setDrawerOpen(true)} accessibilityLabel="Open menu">
+        <Pressable
+          onPress={() => setDrawerOpen(true)}
+          accessibilityLabel="Open menu"
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          style={styles.topbarBtn}
+        >
           <Icon name="menu" size={22} color="#a3a3a3" />
         </Pressable>
         <Text size="md" weight="semibold" color="text" numberOfLines={1} style={styles.title}>
           {sessionTitle || "New conversation"}
         </Text>
-        <Pressable onPress={() => openChat()} accessibilityLabel="New chat">
+        <Pressable
+          onPress={() => openChat()}
+          accessibilityLabel="New chat"
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          style={styles.topbarBtn}
+        >
           <Icon name="add" size={22} color="#a3a3a3" />
         </Pressable>
       </View>
 
+      {tuiQueuePending ? (
+        <View style={styles.syncBanner}>
+          <Icon name="activity" size={13} color="#9ccafa" />
+          <Text size="xs" color="textSecondary">Steering queued in the TUI - delivers at the next boundary</Text>
+        </View>
+      ) : null}
       {currentSessionId && !externalLive[currentSessionId] ? (
         <View style={styles.syncBannerDim}>
           <Icon name="cloud-offline" size={13} color="#9b9b9b" />
@@ -246,6 +266,9 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         remoteActive={!!(currentSessionId && externalLive[currentSessionId])}
         steerQueue={steerQueue}
         onRemoveSteer={removeSteer}
+        pendingSteers={pendingSteers}
+        onRemovePendingSteer={removePendingSteer}
+        steerModes={steerModes}
         bottomInset={kbHeight > 0 ? kbHeight : insets.bottom}
         modelLabel={modelLabel + " · " + thinkingLevel}
         onOpenModel={onOpenModelCb}
@@ -278,6 +301,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
 }
 
 const styles = StyleSheet.create({
+  topbarBtn: { padding: 10, margin: -4 },
   syncBannerDim: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d1d1d" },
   syncBanner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d2733" },
   container: { flex: 1, backgroundColor: colors.bg },

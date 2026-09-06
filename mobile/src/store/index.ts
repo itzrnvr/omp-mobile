@@ -101,6 +101,10 @@ interface StoreState {
   errorToast: string | null;
   /** Steers acknowledged by the bridge, awaiting TUI boundary delivery. */
   pendingSteers: string[];
+  /** TUI composer/steering queue has pending prompts (realtime signal). */
+  tuiQueuePending: boolean;
+  /** sessionId -> agent actively running right now (realtime from ext events). */
+  runningSessions: Record<string, boolean>;
   steerModes: ("mid" | "idle")[];
   removePendingSteer: (index: number) => void;
   lastSendContent: string | null;
@@ -434,6 +438,8 @@ export const useStore = create<StoreState>((set, get) => {
     historySig: null,
     errorToast: null,
     pendingSteers: [],
+    tuiQueuePending: false,
+    runningSessions: {},
     steerModes: [],
     lastSendContent: null,
     historyTruncated: null,
@@ -685,6 +691,21 @@ export const useStore = create<StoreState>((set, get) => {
           // still lands at a later boundary (2026-09-05 advisory).
           break;
         }
+        case 'ext_queue': {
+          if (msg.sessionId === get().currentSessionId) set({ tuiQueuePending: !!msg.pending });
+          break;
+        }
+        case 'ext_entry': {
+          // Realtime: any persisted entry in the TUI session -> debounced
+          // history refresh (branch/rewind/steers/user prompts all land now).
+          if (msg.sessionId && msg.sessionId === get().currentSessionId) {
+            const sid = msg.sessionId;
+            setTimeout(() => {
+              if (get().currentSessionId === sid) wsService?.send({ type: "get_history", sessionId: sid });
+            }, 250);
+          }
+          break;
+        }
         case 'ext_steer_ack': {
           set((s) => ({ steerModes: [...s.steerModes, msg.mode] }));
           break;
@@ -705,6 +726,12 @@ export const useStore = create<StoreState>((set, get) => {
           const sid = msg.sessionId;
           if (!sid || sid !== get().currentSessionId) break;
           const ev = msg.event;
+          if (ev.type === 'agent_start' && sid) {
+            set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: true } }));
+          }
+          if (ev.type === 'agent_end' && sid) {
+            set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: false } }));
+          }
           if (ev.type === 'agent_start') {
             set((s) => {
               // idle-queued steers deliver at this boundary; mid steers that

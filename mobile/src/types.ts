@@ -194,6 +194,8 @@ export type WsServerMessage =
   | { type: 'ext_session'; sessionId: string | null; active: boolean }
   | { type: 'steered'; sessionId: string | null }
   | { type: 'ext_steer_ack'; mode: 'mid' | 'idle' }
+  | { type: 'ext_entry'; sessionId: string | null; entry?: unknown }
+  | { type: 'ext_queue'; sessionId: string | null; pending: boolean }
   | { type: 'status'; status: ServerStatus }
   | { type: 'tunnel'; url: string | null; status: string }
   | { type: 'forked'; sessionId: string; sessions: SessionSummary[] }

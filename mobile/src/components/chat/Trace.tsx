@@ -1,41 +1,19 @@
 /*
- * PURPOSE: The "working / worked-for" chain-of-thought component, 1:1 with the
- * reference (agent-mobile-ui):
- *   - Header button: pulsing live-dot + "Working · {live}s" while running;
- *     "Worked for {dur}" when done; right chevron rotates 90° when open.
- *   - Auto-opens while working; auto-collapses when the turn completes.
- *   - Collapse/expand animated (LayoutAnimation, ~.28s).
- *   - Trace rail: entries padding-left 36; 2px rail #2c2c2c (none on last);
- *     22px circular nodes (#242424 / border #3a3a3a / icon #8e8e8e);
- *     entries fade-in on mount.
- *   - Reasoning entry: sparkle node, "Reasoning · {dur}" label (13/600 #8e8e8e),
- *     text 14.5 #b5b5b5 (streams live via deltas = free typewriter).
- *   - Tool entry: wrench node, blue (#9ccafa) 14/600 name + [done: blue check |
- *     running: 3 blinking dots] + chevron (rotates 180° when open); expandable
- *     ARGUMENTS + RESULT mono boxes (#1b1b1b / #2f2f2f / r10 / 12.5 mono #a8a8a8).
+ * PURPOSE: The working/worked chain-of-thought widget — STATIC by design.
+ * Previous versions used per-entry FadeIn Animated views, LayoutAnimation
+ * collapses and blinking dot loops; those were a major source of list
+ * glitches. Now: plain conditional rendering, one 1s timer for the live
+ * seconds counter, per-entry expand is a simple state toggle.
  *
- * CONTROLLED MODE: pass `open` + `onToggle` for the LIVE working group so the
- * parent can hide the streaming answer preview when the user collapses it
- * (otherwise the preview slid under the composer). Uncontrolled (history turns)
- * self-manages as before.
- *
- * BUG FIX (2026-09-05): the trailing "thinking…" node rendered even while a
- * reasoning step was already streaming its text, showing two reasoning rows.
- * It now only appears when there is no active reasoning step.
+ * Entries: reasoning (sparkle), tool (wrench, expandable args/result),
+ * intermediate response (chat icon). Header: "Working · Ns" while streaming,
+ * "Worked for Xs" when done; tap toggles the body.
  */
 
-import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  Text as RNText,
-  Animated,
-  LayoutAnimation,
-  ScrollView,
-} from "react-native";
-import { colors, spacing } from "../../theme";
+import React, { useEffect, useState } from "react";
+import { View, Pressable, Text as RNText, StyleSheet } from "react-native";
 import { Icon } from "../ui/Icon";
+import { colors, spacing } from "../../theme";
 
 export interface TraceStep {
   kind: "reasoning" | "tool" | "text";
@@ -49,138 +27,29 @@ export interface TraceStep {
   dur?: string;
 }
 
-export interface TraceProps {
-  steps: TraceStep[];
-  durationMs?: number;
-  isStreaming?: boolean;
-  /** Controlled open state (live working group); omit for self-managed. */
-  /** Start expanded (history turns whose only content is steps). */
-  defaultOpen?: boolean;
-  open?: boolean;
-  onToggle?: () => void;
-}
-
 function formatDuration(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + "s";
+  return Math.floor(s / 60) + "m " + (s % 60) + "s";
 }
 
-/** Pulsing 7px dot while working (livePulse 1.1s). */
-function LiveDot() {
-  const opacity = useRef(new Animated.Value(0.25)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 550, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.25, duration: 550, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [opacity]);
-  return <Animated.View style={[styles.liveDot, { opacity }]} />;
-}
-
-/** Three blinking dots for a running tool (blink 1.1s staggered). */
-function RunningDots() {
-  const dots = [useRef(new Animated.Value(0.25)).current, useRef(new Animated.Value(0.25)).current, useRef(new Animated.Value(0.25)).current];
-  useEffect(() => {
-    const anims = dots.map((v, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 150),
-          Animated.timing(v, { toValue: 1, duration: 440, useNativeDriver: true }),
-          Animated.timing(v, { toValue: 0.25, duration: 660, useNativeDriver: true }),
-        ]),
-      ),
-    );
-    anims.forEach((a) => a.start());
-    return () => anims.forEach((a) => a.stop());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return (
-    <View style={styles.runningDots}>
-      {dots.map((v, i) => (
-        <Animated.View key={i} style={[styles.runningDot, { opacity: v }]} />
-      ))}
-    </View>
-  );
-}
-
-/** Entry fade-in (traceIn .3s: opacity 0→1, translateY 4→0). */
-function FadeIn({ children }: { children: React.ReactNode }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(anim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-  }, [anim]);
-  return (
-    <Animated.View
-      style={{
-        opacity: anim,
-        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }],
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-}
-
-function ToolStep({ step }: { step: TraceStep }) {
+function ToolBody({ step }: { step: TraceStep }) {
   const [open, setOpen] = useState(false);
-  const done = step.status !== "running";
-  const rotate = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(rotate, {
-      toValue: open ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [open, rotate]);
-
-  const toggle = () => {
-    LayoutAnimation.easeInEaseOut();
-    setOpen((o) => !o);
-  };
-
   return (
     <View>
-      <Pressable style={styles.toolTitleRow} onPress={toggle}>
-        <RNText style={[styles.toolName, step.isError && styles.toolNameError]}>
-          {step.name || "tool"}
+      <Pressable style={styles.toolHead} onPress={() => setOpen((o) => !o)}>
+        <RNText style={styles.toolName}>{step.name || "tool"}</RNText>
+        <RNText style={styles.toolStatus}>
+          {step.status === "running" ? "…" : step.isError ? "error" : "done"}
         </RNText>
-        {done ? <Icon name="check" size={13} color={colors.link} /> : <RunningDots />}
-        <Animated.View
-          style={{
-            transform: [
-              { rotate: rotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] }) },
-            ],
-          }}
-        >
-          <Icon name="chevron-down" size={13} color={colors.link} />
-        </Animated.View>
+        <Icon name={open ? "chevron-down" : "chevron-forward"} size={13} color="#606060" />
       </Pressable>
-      {open && (
-        <View>
-          {step.args ? (
-            <>
-              <RNText style={styles.argsLabel}>ARGUMENTS</RNText>
-              <ScrollView style={styles.argsBox} nestedScrollEnabled>
-                <RNText style={styles.argsText}>{step.args}</RNText>
-              </ScrollView>
-            </>
-          ) : null}
-          {step.result ? (
-            <>
-              <RNText style={styles.argsLabel}>RESULT</RNText>
-              <ScrollView style={styles.argsBox} nestedScrollEnabled>
-                <RNText style={styles.argsText}>{step.result}</RNText>
-              </ScrollView>
-            </>
-          ) : null}
-        </View>
-      )}
+      {open && step.args ? (
+        <RNText style={styles.mono}>ARGS{"\n"}{step.args}</RNText>
+      ) : null}
+      {open && step.result ? (
+        <RNText style={styles.mono} numberOfLines={40}>RESULT{"\n"}{step.result}</RNText>
+      ) : null}
     </View>
   );
 }
@@ -192,16 +61,17 @@ export function Trace({
   open,
   onToggle,
   defaultOpen,
-}: TraceProps) {
-  const [internalOpen, setInternalOpen] = useState(!!isStreaming || !!defaultOpen);
+}: {
+  steps: TraceStep[];
+  durationMs?: number;
+  isStreaming?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
+  defaultOpen?: boolean;
+}) {
+  const [internalOpen, setInternalOpen] = useState(!!defaultOpen);
   const [secs, setSecs] = useState(0);
-  const controlled = open !== undefined;
-  const expanded = controlled ? !!open : internalOpen;
-
-  useEffect(() => {
-    if (isStreaming) setInternalOpen(true);
-    else setInternalOpen(false);
-  }, [isStreaming]);
+  const expanded = open !== undefined ? open : internalOpen;
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -209,166 +79,71 @@ export function Trace({
     return () => clearInterval(id);
   }, [isStreaming]);
 
-  if (steps.length === 0 && !isStreaming) return null;
-
-  const toggle = () => {
-    LayoutAnimation.easeInEaseOut();
-    if (controlled && onToggle) onToggle();
-    else setInternalOpen((o) => !o);
-  };
-
-  // Only show the placeholder "thinking…" node when no reasoning step is
-  // actively streaming text (otherwise it duplicates the reasoning row).
-  const lastStep = steps[steps.length - 1];
-  const showThinkingNode =
-    !!isStreaming && (!lastStep || lastStep.kind !== "reasoning" || !lastStep.text);
+  // Completed turns: never show running indicators.
+  const effSteps = isStreaming ? steps : steps.map((s) => (s.kind === "tool" ? { ...s, status: "done" as const } : s));
 
   return (
-    <View style={styles.wrap}>
-      <Pressable style={styles.header} onPress={toggle}>
-        {isStreaming && <LiveDot />}
+    <View>
+      <Pressable
+        style={styles.header}
+        onPress={() => (onToggle ? onToggle() : setInternalOpen((o) => !o))}
+      >
         <RNText style={styles.headerText}>
           {isStreaming ? `Working · ${secs}s` : `Worked for ${formatDuration(durationMs || 0)}`}
         </RNText>
-        <Icon
-          name={expanded ? "chevron-down" : "chevron-forward"}
-          size={16}
-          color={colors.textMuted}
-        />
+        <Icon name={expanded ? "chevron-down" : "chevron-forward"} size={14} color="#606060" />
       </Pressable>
-
-      {expanded && (
-        <View style={styles.trace}>
-          {steps.map((rawStep, i) => {
-            // Completed turns (history) must never show running dots: force
-            // done status when not streaming (2026-09-05 dots bug).
-            const step =
-              !isStreaming && rawStep.kind === "tool"
-                ? { ...rawStep, status: "done" as const }
-                : rawStep;
-            const last = i === steps.length - 1 && !isStreaming;
-            return (
-              <FadeIn key={i}>
-                <View style={[styles.entry, last && styles.entryLast]}>
-                  <View style={styles.node}>
-                    <Icon
-                      name={
-                        step.kind === "reasoning"
-                          ? "sparkle"
-                          : step.kind === "text"
-                            ? "chat-outline"
-                            : "wrench"
-                      }
-                      size={11}
-                      color="#8e8e8e"
-                    />
-                  </View>
-                  {!last && <View style={styles.rail} />}
-                  <View style={styles.entryBody}>
-                    {step.kind === "reasoning" ? (
-                      <>
-                        <RNText style={styles.traceLabel}>
-                          {"Reasoning" + (step.dur ? " · " + step.dur : "")}
-                        </RNText>
-                        <RNText style={styles.traceText}>{step.text}</RNText>
-                      </>
-                    ) : step.kind === "text" ? (
-                      <>
-                        <RNText style={styles.traceLabel}>Response</RNText>
-                        <RNText style={styles.traceText}>{step.text}</RNText>
-                      </>
-                    ) : (
-                      <ToolStep step={step} />
-                    )}
-                  </View>
-                </View>
-              </FadeIn>
-            );
-          })}
-          {showThinkingNode && (
-            <View style={styles.entry}>
-              <View style={styles.node}>
-                <Icon name="sync" size={11} color="#8e8e8e" />
-              </View>
-              <View style={styles.entryBody}>
-                <RNText style={styles.traceText}>thinking…</RNText>
+      {expanded ? (
+        <View style={styles.body}>
+          {effSteps.map((step, i) => (
+            <View key={i} style={styles.row}>
+              <Icon
+                name={step.kind === "reasoning" ? "sparkle" : step.kind === "text" ? "chat-outline" : "wrench"}
+                size={11}
+                color="#8e8e8e"
+              />
+              <View style={styles.rowBody}>
+                {step.kind === "tool" ? (
+                  <ToolBody step={step} />
+                ) : (
+                  <>
+                    <RNText style={styles.label}>
+                      {step.kind === "reasoning" ? "Reasoning" : "Response"}
+                    </RNText>
+                    <RNText style={styles.text}>{step.text}</RNText>
+                  </>
+                )}
               </View>
             </View>
-          )}
+          ))}
+          {isStreaming && effSteps.length === 0 ? (
+            <RNText style={styles.text}>thinking…</RNText>
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: spacing.xs },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingVertical: 2,
-  },
-  headerText: { color: colors.textMuted, fontSize: 14 },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.link,
-  },
-  trace: { marginTop: 14 },
-  entry: { position: "relative", paddingLeft: 36, paddingBottom: 22 },
-  entryLast: { paddingBottom: 2 },
-  node: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#242424",
-    borderWidth: 1,
-    borderColor: "#3a3a3a",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rail: {
-    position: "absolute",
-    left: 10,
-    top: 28,
-    bottom: 4,
-    width: 2,
-    borderRadius: 1,
-    backgroundColor: "#2c2c2c",
-  },
-  entryBody: { flex: 1 },
-  traceLabel: { fontSize: 13, fontWeight: "600", color: "#8e8e8e", marginBottom: 4 },
-  traceText: { fontSize: 14.5, lineHeight: 22, color: "#b5b5b5" },
-  toolTitleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
-  toolName: { color: colors.link, fontSize: 14, fontWeight: "600" },
-  toolNameError: { color: colors.error },
-  runningDots: { flexDirection: "row", gap: 3, alignItems: "center", marginLeft: 2 },
-  runningDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.link },
-  argsLabel: {
-    marginTop: 13,
-    fontSize: 11,
-    letterSpacing: 0.9,
-    color: "#6f6f6f",
-    fontWeight: "600",
-  },
-  argsBox: {
-    marginTop: 6,
-    backgroundColor: "#1b1b1b",
-    borderWidth: 1,
-    borderColor: "#2f2f2f",
-    borderRadius: 10,
-    padding: 10,
-    maxHeight: 180,
-  },
-  argsText: {
+  header: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
+  headerText: { fontSize: 13, color: "#8e8e8e" },
+  body: { paddingLeft: spacing.md, gap: spacing.sm, paddingBottom: spacing.xs },
+  row: { flexDirection: "row", gap: 8 },
+  rowBody: { flex: 1, gap: 2 },
+  label: { fontSize: 12, color: "#8e8e8e" },
+  text: { fontSize: 13.5, lineHeight: 19, color: "#b5b5b5" },
+  toolHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  toolName: { fontSize: 13.5, color: "#9ccafa", fontWeight: "600" },
+  toolStatus: { fontSize: 11.5, color: "#8e8e8e" },
+  mono: {
     fontFamily: "monospace",
-    fontSize: 12.5,
-    lineHeight: 20,
+    fontSize: 11.5,
+    lineHeight: 16,
     color: "#a8a8a8",
+    backgroundColor: "#1b1b1b",
+    borderRadius: 6,
+    padding: 6,
+    marginTop: 4,
   },
 });

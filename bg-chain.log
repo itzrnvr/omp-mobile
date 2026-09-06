@@ -1,0 +1,10 @@
+== build x86 ==
+BUILD SUCCESSFUL in 1m 5s
+== restart bridge+tui ==
+Microsoft Windows [Version 10.0.26200.8246]
+(c) Microsoft Corporation. All rights reserved.
+
+D:\omp-mobile>== install emulator ==
+Success
+== verify: tui turn + open in app ==
+SID=NF

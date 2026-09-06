@@ -245,32 +245,13 @@ export function MessageList({
     if (newId) openChat(newId);
   };
 
-  // Big jump = history load: land at the bottom INSTANTLY. Animated
-  // scrollToEnd on a long list stalls mid-way (the "click it multiple
-  // times" bug, 2026-09-05). Small deltas = live turn: smooth scroll.
-  useEffect(() => {
-    const delta = messages.length - prevMsgCount.current;
-    prevMsgCount.current = messages.length;
-    if (delta > 1 && !isGenerating) {
-      nearBottomRef.current = true;
-      const id = setTimeout(() => {
-        listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
-      }, 60);
-      return () => clearTimeout(id);
-    }
+  // ONE scroll rule (2026-09-06 simplification): whenever the content
+  // grows and the user is parked at the bottom, pin. No timers, no intervals.
+  const handleContentSize = () => {
     if (nearBottomRef.current) {
-      listRef.current?.scrollToEnd({ animated: false });
+      listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
     }
-  }, [messages.length, streamingText, streamingThinking, toolCalls?.length, notices?.length, isGenerating]);
-
-  // Reference: keep pinned to bottom every 250ms while a turn is working.
-  useEffect(() => {
-    if (!isGenerating) return;
-    const id = setInterval(() => {
-      if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false });
-    }, 250);
-    return () => clearInterval(id);
-  }, [isGenerating]);
+  };
 
   const handleScroll = (event: {
     nativeEvent: {
@@ -301,6 +282,7 @@ export function MessageList({
         data={items}
         keyExtractor={(item, i) => (item.kind === "user" ? "u" + i : "t" + i)}
         onScroll={handleScroll}
+        onContentSizeChange={handleContentSize}
         scrollEventThrottle={16}
         contentContainerStyle={[styles.list, { paddingBottom: spacing.md + 132 + (kbHeight || 0) }]}
         ListHeaderComponent={
@@ -346,20 +328,7 @@ export function MessageList({
                 steps={liveSteps as TraceStep[]}
                 isStreaming
                 open={liveOpen}
-                onToggle={() => {
-                  setLiveOpen((o) => !o);
-                  // Layout settles a tick later; jump to bottom without
-                  // animation so collapsed content never peeks under the
-                  // composer while the IME padding is active (2026-09-05).
-                  setTimeout(
-                    () =>
-                      listRef.current?.scrollToOffset({
-                        offset: Number.MAX_SAFE_INTEGER,
-                        animated: false,
-                      }),
-                    60,
-                  );
-                }}
+                onToggle={() => setLiveOpen((o) => !o)}
               />
               {streamingText && liveOpen ? (
                 <View style={styles.answerWrap}>

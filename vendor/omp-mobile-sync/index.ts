@@ -63,6 +63,8 @@ let lastCtx: { abort?: () => void; isIdle?: () => boolean } | null = null;
 const pendingSteers: string[] = [];
 // True between agent_start and agent_end of THIS TUI (mid-turn vs idle).
 let tuiRunning = false;
+let queuePending = false;
+let wrappedSm: unknown = null;
 
 function connect(): void {
   if (closed) return;
@@ -200,6 +202,15 @@ export default function (pi: ExtensionAPI): void {
 
     pi.on("agent_start", (_e, ctx) => {
       tuiRunning = true;
+      try {
+        const sm = ctx.sessionManager as unknown as object;
+        const ev = (pi as unknown as { events?: object }).events;
+        log("INTROSPECT sm keys: " + Object.keys(sm).join(","));
+        log("INTROSPECT sm proto: " + Object.getOwnPropertyNames(Object.getPrototypeOf(sm)).join(","));
+        log("INTROSPECT events keys: " + Object.keys(ev || {}).join(",") + " proto: " + Object.getOwnPropertyNames(Object.getPrototypeOf(ev || {})).join(","));
+      } catch (e) {
+        log("INTROSPECT THREW " + String(e));
+      }
       lastCtx = ctx as { abort?: () => void };
       fwd(ctx, { type: "agent_start" });
     });

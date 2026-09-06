@@ -74,6 +74,7 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
   const currentSessionId = useStore((s) => s.currentSessionId);
   const activeSessionIds = useStore((s) => s.activeSessionIds);
   const externalLive = useStore((s) => s.externalLive);
+  const runningSessions = useStore((s) => s.runningSessions);
   const isGenerating = useStore((s) => s.isGenerating);
   const [query, setQuery] = useState("");
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
@@ -125,8 +126,9 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
     for (const [id, on] of Object.entries(activeSessionIds || {})) if (on) set.add(id);
     for (const [id, on] of Object.entries(externalLive || {})) if (on) set.add(id);
     if (isGenerating && currentSessionId) set.add(currentSessionId);
+    for (const [id, on] of Object.entries(runningSessions || {})) if (on) set.add(id);
     return set;
-  }, [activeSessionIds, externalLive, isGenerating, currentSessionId]);
+  }, [activeSessionIds, externalLive, isGenerating, currentSessionId, runningSessions]);
   const filtered = useMemo(
     () => [...base.filter((s) => liveIds.has(s.id)), ...base.filter((s) => !liveIds.has(s.id))],
     [base, liveIds],
@@ -134,16 +136,21 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
 
   // Folder groups ordered by their newest session; current folder open by default.
   const currentDir = sessions.find((s) => s.id === currentSessionId)?.cwd || "";
-  const groups: { dir: string; items: SessionSummary[] }[] = [];
-  for (const s of filtered) {
-    const d = s.cwd || "";
-    let g = groups.find((x) => x.dir === d);
-    if (!g) {
-      g = { dir: d, items: [] };
-      groups.push(g);
+  // Memoized: O(n) grouping must not run on every streaming re-render
+  // (UI-thread hygiene, 2026-09-06).
+  const groups = useMemo(() => {
+    const out: { dir: string; items: SessionSummary[] }[] = [];
+    for (const s of filtered) {
+      const d = s.cwd || "";
+      let g = out.find((x) => x.dir === d);
+      if (!g) {
+        g = { dir: d, items: [] };
+        out.push(g);
+      }
+      g.items.push(s);
     }
-    g.items.push(s);
-  }
+    return out;
+  }, [filtered]);
 
   const items: Item[] = [];
   if (q) {
@@ -170,6 +177,7 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
 
   const renderRow = (s: SessionSummary) => {
     const active = liveIds.has(s.id);
+    const running = !!runningSessions[s.id];
     return (
       <Pressable
         style={[styles.item, s.id === currentSessionId && styles.itemActive]}
@@ -282,7 +290,10 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
           }}
         />
 
-        <Pressable style={styles.footerRow} onPress={onOpenSettings}>
+        <Pressable
+          style={[styles.footerRow, { paddingBottom: Math.max(insets.bottom, 10) }]}
+          onPress={onOpenSettings}
+        >
           <Icon name="settings" size={18} color="#8e8e8e" />
           <RNText style={styles.footerText}>Settings & server</RNText>
         </Pressable>

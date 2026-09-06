@@ -262,17 +262,47 @@ export async function getSessionHistory(
     const lines = text.split("\n").filter((l) => l.trim());
     const messages: OmpMessage[] = [];
     let title = "Untitled";
-
+    // Sessions are a TREE: cancel+rewind+resend leaves abandoned branches in
+    // the file. Render only the CURRENT leaf chain (walk parentId from the
+    // last entry) so cancelled/rewound turns never show as duplicates
+    // (2026-09-06).
+    const byId = new Map<string, { parentId?: string; type?: string; message?: OmpMessage }>();
+    let leafId: string | null = null;
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
-        if (obj.type === "title" && obj.title) {
-          title = obj.title;
-        } else if (obj.type === "message" && obj.message) {
-          messages.push(obj.message as OmpMessage);
+        if (obj.type === "title" && obj.title) title = obj.title;
+        if (obj.id) {
+          byId.set(obj.id, obj);
+          leafId = obj.id;
         }
       } catch {
         // Skip non-JSON lines
+      }
+    }
+
+    const chain: { type?: string; message?: OmpMessage }[] = [];
+    let cur = leafId;
+    let guard = 0;
+    while (cur && guard++ < 100000) {
+      const e = byId.get(cur);
+      if (!e) break;
+      chain.push(e);
+      cur = e.parentId || null;
+    }
+    chain.reverse();
+    for (const e of chain) {
+      if (e.type === "message" && e.message) messages.push(e.message);
+    }
+    if (messages.length === 0) {
+      // Fallback for files without id/parentId chains: linear read.
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "message" && obj.message) messages.push(obj.message as OmpMessage);
+        } catch {
+          // skip
+        }
       }
     }
 
