@@ -453,10 +453,26 @@ export const useStore = create<StoreState>((set, get) => {
       wsService.onMessage = (msg) => get().processWsEvent(msg);
       wsService.onStatusChange = (status) => {
         set({ wsStatus: status });
+        if (status === "connected") {
+          if (rebootstrapTimer) {
+            clearTimeout(rebootstrapTimer);
+            rebootstrapTimer = null;
+          }
+        } else if (status === "disconnected" && !rebootstrapTimer) {
+          rebootstrapTimer = setTimeout(() => {
+            rebootstrapTimer = null;
+            if (get().wsStatus !== "connected") void bootstrapConnect(0);
+          }, 3000);
+        }
         if (status === 'connected') {
           get().refreshSessions();
           wsService?.send({ type: 'get_status' });
           // Restore the session open before process death / recreation.
+          // Re-request history for the open session: a get_history sent while
+          // the socket was still connecting is dropped and the watcher never
+          // registers for that session (2026-09-06 re-request history on connect).
+          const openSid = get().currentSessionId;
+          if (openSid) wsService?.send({ type: "get_history", sessionId: openSid });
           const rid = get().pendingRestoreId;
           if (rid && !get().currentSessionId) {
             set({ pendingRestoreId: null });
@@ -913,6 +929,10 @@ export const useStore = create<StoreState>((set, get) => {
 const BOOTSTRAP_URL =
   'https://gist.githubusercontent.com/itzrnvr/b5167afad091916fc99263f1e45c7519/raw/omp-tunnel.json';
 const MAX_BOOTSTRAP_TRIES = 30;
+// Self-heal: bridge restarts rotate the tunnel URL; a running app holding the
+// dead URL would never reconnect (the "still no sync" device symptom).
+// On disconnect, re-fetch the bootstrap gist and reconnect (2026-09-06).
+let rebootstrapTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Fetch the tunnel URL from the bootstrap gist and connect; retry while the tunnel spins up. */
 async function bootstrapConnect(attempt: number): Promise<void> {
