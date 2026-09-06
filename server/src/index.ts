@@ -328,6 +328,9 @@ const EXT_PROTO_CURRENT = 2;
 const extConns = new Map<WebSocket, { sessionId: string | null; proto?: number }>();
 const extRunning = new Map<string, boolean>();
 const extLastEvent = new Map<string, number>();
+// Only MODERN (proto-2) ext activity may suppress the polling watcher; stale
+// proto-1 sockets must never silence the fallback sync (2026-09-06).
+const extModernLast = new Map<string, number>();
 
 function extIsRunning(sessionId: string | null | undefined): boolean {
   return !!sessionId && extRunning.get(sessionId) === true;
@@ -355,6 +358,12 @@ function extOwnerWs(sessionId: string | null | undefined): WebSocket | null {
   if (!sessionId) return null;
   for (const [ws, c] of extConns) if (c.sessionId === sessionId) return ws;
   return null;
+}
+
+function extModernRecentlyActive(sessionId: string | null | undefined, ms = 2000): boolean {
+  if (!sessionId) return false;
+  const at = extModernLast.get(sessionId);
+  return !!at && Date.now() - at < ms;
 }
 
 function extRecentlyActive(sessionId: string | null | undefined, ms = 2000): boolean {
@@ -413,6 +422,7 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     const ev = m.event || {};
     if (ev.type === 'agent_start') extRunning.set(sid, true);
     if (ev.type === 'agent_end') extRunning.set(sid, false);
+    if (conn.proto === EXT_PROTO_CURRENT) extModernLast.set(sid, Date.now());
     broadcastMobile({ type: 'ext_event', sessionId: sid, event: ev });
   }
 }
@@ -429,7 +439,7 @@ function startSessionWatcher(ws: WebSocket, sessionId: string, state: Connection
   sessionWatchers.set(ws, entry);
   const tick = async () => {
     if (state.ompKill) return;
-    if (extIsRunning(sessionId) || extRecentlyActive(sessionId)) return;
+    if (extModernRecentlyActive(sessionId)) return;
     try {
       const file = await findSessionFile(sessionId);
       if (!file) return;
@@ -528,6 +538,14 @@ async function handleRest(req: Request): Promise<Response> {
 
   // Folder picker backend (2026-09-05): list directories + create folders so
   // the mobile app gets a real navigator instead of a text input.
+  if (url.pathname === "/api/sync-status" && req.method === "GET") {
+    const live: { sessionId: string; proto: number; running: boolean }[] = [];
+    for (const c of extConns.values()) {
+      if (c.sessionId) live.push({ sessionId: c.sessionId, proto: c.proto || 1, running: extRunning.get(c.sessionId) === true });
+    }
+    return new Response(JSON.stringify({ live }), { headers: { "Content-Type": "application/json" } });
+  }
+
   if (url.pathname === "/api/fs" && req.method === "GET") {
     const p = url.searchParams.get("path") || "";
     return new Response(JSON.stringify(listDirs(p)), {

@@ -205,6 +205,14 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         </Pressable>
       </View>
 
+      {currentSessionId && !externalLive[currentSessionId] ? (
+        <View style={styles.syncBannerDim}>
+          <Icon name="cloud-offline" size={13} color="#9b9b9b" />
+          <Text size="xs" color="textMuted">
+            Polling sync - run /reload-plugins in the desktop TUI for live streaming
+          </Text>
+        </View>
+      ) : null}
       {externalActive || externalLive[currentSessionId ?? ''] ? (
         <View style={styles.syncBanner}>
           <Icon name="activity" size={13} color="#9ccafa" />
@@ -270,6 +278,7 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
 }
 
 const styles = StyleSheet.create({
+  syncBannerDim: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d1d1d" },
   syncBanner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.lg, paddingVertical: 4, backgroundColor: "#1d2733" },
   container: { flex: 1, backgroundColor: colors.bg },
   toast: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },

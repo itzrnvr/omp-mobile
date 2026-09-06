@@ -170,6 +170,7 @@ function fwd(
 export default function (pi: ExtensionAPI): void {
   try {
     api = pi;
+    log("factory load marker RELOAD-MARKER-1788659455");
     log("factory pi keys: " + Object.keys(pi as unknown as object).join(","));
     const pr = pi as unknown as Record<string, unknown>;
     log("sub keys: extension=[" + Object.keys((pr.extension as object) || {}).join(",") + "] runtime=[" + Object.keys((pr.runtime as object) || {}).join(",") + "] events=[" + Object.keys((pr.events as object) || {}).join(",") + "]"); // sub keys
