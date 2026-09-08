@@ -26,6 +26,7 @@ const KEY_THINKING = 'omp.thinking';
 
 const KEY_CWD = 'omp.cwd';
 const KEY_RECENT = 'omp.recentModels';
+const KEY_FAV = 'omp.favoriteModels';
 /** Last open session id — restored after process death / activity recreate. */
 const KEY_LAST_SESSION = 'omp.lastSession';
 
@@ -101,8 +102,6 @@ interface StoreState {
   errorToast: string | null;
   /** Steers acknowledged by the bridge, awaiting TUI boundary delivery. */
   pendingSteers: string[];
-  /** TUI composer/steering queue has pending prompts (realtime signal). */
-  tuiQueuePending: boolean;
   /** sessionId -> agent actively running right now (realtime from ext events). */
   runningSessions: Record<string, boolean>;
   steerModes: ("mid" | "idle")[];
@@ -139,6 +138,9 @@ interface StoreState {
   uploadAttachment: (name: string, base64: string) => void;
   /** Recently used model values (most recent first) for the picker strip. */
   recentModels: string[];
+  /** Starred model values for the picker's FAVORITES section. */
+  favoriteModels: string[];
+  toggleFavorite: (model: string) => void;
 
   // hydration
   hydrate: () => Promise<void>;
@@ -438,7 +440,6 @@ export const useStore = create<StoreState>((set, get) => {
     historySig: null,
     errorToast: null,
     pendingSteers: [],
-    tuiQueuePending: false,
     runningSessions: {},
     steerModes: [],
     lastSendContent: null,
@@ -471,6 +472,10 @@ export const useStore = create<StoreState>((set, get) => {
           }, 3000);
         }
         if (status === 'connected') {
+          // Bridge truth is per-connection: ext hellos re-register within
+          // seconds, but dead TUIs never send ext_bye/agent_end — without a
+          // reset their pips (externalLive/runningSessions) stick forever.
+          set({ externalLive: {}, externalActive: false, runningSessions: {} });
           get().refreshSessions();
           wsService?.send({ type: 'get_status' });
           // Restore the session open before process death / recreation.
@@ -530,6 +535,14 @@ export const useStore = create<StoreState>((set, get) => {
     setThinkingLevel: (level) => {
       set({ thinkingLevel: level });
       AsyncStorage.setItem(KEY_THINKING, level).catch(() => {});
+    },
+
+    toggleFavorite: (model) => {
+      const next = get().favoriteModels.includes(model)
+        ? get().favoriteModels.filter((m) => m !== model)
+        : [model, ...get().favoriteModels];
+      set({ favoriteModels: next });
+      AsyncStorage.setItem(KEY_FAV, JSON.stringify(next)).catch(() => {});
     },
 
     setSelectedCwd: (cwd) => {
@@ -691,17 +704,51 @@ export const useStore = create<StoreState>((set, get) => {
           // still lands at a later boundary (2026-09-05 advisory).
           break;
         }
-        case 'ext_queue': {
-          if (msg.sessionId === get().currentSessionId) set({ tuiQueuePending: !!msg.pending });
-          break;
-        }
         case 'ext_entry': {
-          // Realtime: any persisted entry in the TUI session -> debounced
-          // history refresh (branch/rewind/steers/user prompts all land now).
-          if (msg.sessionId && msg.sessionId === get().currentSessionId) {
-            const sid = msg.sessionId;
+          // Realtime interception: every persisted TUI entry. Entry payload
+          // drives live model/context state; everything else triggers a
+          // guarded debounced history refresh.
+          const esid = msg.sessionId;
+          const entry = msg.entry as Record<string, unknown> | undefined;
+          if (!esid) break;
+          if (entry) {
+            const et = entry.type as string | undefined;
+            if (et === 'model_change') {
+              // model_change.model is a plain "provider/model" string.
+              const mm = entry.model;
+              if (typeof mm === 'string' && mm) set({ currentModel: mm });
+              break;
+            }
+            if (et === 'model_usage' && esid === get().currentSessionId) {
+              // Usage rides on the live-only model_usage entry (verified shape
+              // 2026-09-08: entry.usage {input,output,cacheRead,cacheWrite,
+              // totalTokens,...}; message entries carry NO usage). Max-guard:
+              // tiny auto-thinking sub-requests must not clobber the session
+              // total. model comes from model_change only (this entry's model
+              // is the sub-request's, e.g. a tiny thinker).
+              const u = entry.usage as Record<string, unknown> | undefined;
+              const total = typeof u?.totalTokens === 'number' ? u.totalTokens : 0;
+              if (total > 0 && total >= get().contextTokens) {
+                set({
+                  contextTokens: total,
+                  lastUsage: {
+                    input: Number(u?.input ?? 0),
+                    output: Number(u?.output ?? 0),
+                    cacheRead: Number(u?.cacheRead ?? 0),
+                    cacheWrite: Number(u?.cacheWrite ?? 0),
+                    totalTokens: total,
+                  },
+                });
+              }
+              break;
+            }
+          }
+          if (esid === get().currentSessionId && !get().isGenerating) {
+            // Idle only: a mid-turn history push would clear streamingText/
+            // liveSteps and flip steer semantics. The live mirror commits the
+            // turn on agent_end; refresh lands right after.
             setTimeout(() => {
-              if (get().currentSessionId === sid) wsService?.send({ type: "get_history", sessionId: sid });
+              if (get().currentSessionId === esid) wsService?.send({ type: "get_history", sessionId: esid });
             }, 250);
           }
           break;
@@ -712,26 +759,49 @@ export const useStore = create<StoreState>((set, get) => {
         }
         case 'ext_session': {
           const sid = msg.sessionId;
+          const running =
+            (msg as unknown as Record<string, unknown>).running === true;
+          const runningKnown =
+            typeof (msg as unknown as Record<string, unknown>).running === 'boolean';
           set((s) => ({
             externalLive: sid
               ? { ...s.externalLive, [sid]: msg.active }
               : s.externalLive,
+            // running recovers the Stop button for a turn whose agent_start
+            // fired before we opened/connected (reconnect + mid-turn open).
+            runningSessions:
+              sid && runningKnown
+                ? { ...s.runningSessions, [sid]: running }
+                : s.runningSessions,
           }));
           if (sid && sid === get().currentSessionId) set({ externalActive: msg.active });
+          // A running ext_session for the OPEN session recovers the live
+          // footer + Stop button when agent_start fired before we connected.
+          // Never force false here — turn end is the ext_event's job.
+          if (sid && sid === get().currentSessionId && running && !get().isGenerating) {
+            set({
+              isGenerating: true,
+              liveSteps: [],
+              streamingText: '',
+              streamingThinking: '',
+            });
+          }
           break;
         }
         case 'ext_event': {
           // Token-level mirror of a TUI-run session. Reuse the live pipeline
           // verbatim; commit on agent_end (no 'complete' arrives externally).
           const sid = msg.sessionId;
-          if (!sid || sid !== get().currentSessionId) break;
           const ev = msg.event;
-          if (ev.type === 'agent_start' && sid) {
-            set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: true } }));
+          // Pips update for ALL sessions (drawer) before the open-session filter.
+          if (sid && ev) {
+            if (ev.type === 'agent_start') {
+              set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: true } }));
+            } else if (ev.type === 'agent_end') {
+              set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: false } }));
+            }
           }
-          if (ev.type === 'agent_end' && sid) {
-            set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: false } }));
-          }
+          if (!sid || sid !== get().currentSessionId) break;
           if (ev.type === 'agent_start') {
             set((s) => {
               // idle-queued steers deliver at this boundary; mid steers that
@@ -818,12 +888,23 @@ export const useStore = create<StoreState>((set, get) => {
             historyTruncated: msg.truncated
               ? { shown: (msg.messages || []).length, total: msg.totalCount || 0 }
               : null,
-            messages: msg.messages,
-            streamingText: '',
-            streamingThinking: '',
-            isGenerating: false,
             sessionTitle: msg.title || null,
             ...(activeModel ? { selectedModel: activeModel } : {}),
+            // Mid-turn history contains no in-flight assistant text (entries
+            // persist at message_end; the live turn commits via pendingMessages
+            // at agent_end), so messages are always safe to apply. Guard ONLY
+            // the streaming resets: a watcher push landing mid-turn must not
+            // nuke the streaming footer (same race class as ext_entry).
+            // Mid-turn open coverage: agent_start fired before we opened this
+            // session, so recover isGenerating from the realtime running map.
+            messages: msg.messages,
+            ...(get().isGenerating && get().currentSessionId === msg.sessionId
+              ? {}
+              : {
+                  streamingText: '',
+                  streamingThinking: '',
+                  isGenerating: !!get().runningSessions[msg.sessionId],
+                }),
           });
           console.log('[hist] APPLIED', msg.messages.length);
           if (activeModel) AsyncStorage.setItem(KEY_MODEL, activeModel).catch(() => {});
@@ -920,12 +1001,23 @@ export const useStore = create<StoreState>((set, get) => {
         } catch {
           recents = [];
         }
+        let favs: string[] = [];
+        try {
+          const raw = await AsyncStorage.getItem(KEY_FAV);
+          if (raw) {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed)) favs = parsed.filter((x): x is string => typeof x === "string");
+          }
+        } catch {
+          favs = [];
+        }
         set({
           token: token ?? 'omp-mobile-personal-2026',
           selectedModel: model ?? null,
           thinkingLevel: (thinking as ThinkingLevel) ?? 'high',
           selectedCwd: cwd ?? null,
           recentModels: recents,
+          favoriteModels: favs,
         });
       } catch {
         set({ token: 'omp-mobile-personal-2026' });
@@ -949,6 +1041,7 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     recentModels: [],
+    favoriteModels: [],
   };
 });
 
@@ -964,16 +1057,38 @@ let rebootstrapTimer: ReturnType<typeof setTimeout> | null = null;
 /** Fetch the tunnel URL from the bootstrap gist and connect; retry while the tunnel spins up. */
 async function bootstrapConnect(attempt: number): Promise<void> {
   try {
-    const res = await fetch(BOOTSTRAP_URL, { cache: 'no-store' });
+    // Cache-buster: gist raw CDN serves stale copies for minutes despite
+    // no-store (phone bootstrapped a pre-lanUrl gist and stuck to tunnel).
+    const res = await fetch(BOOTSTRAP_URL + '?t=' + Date.now(), { cache: 'no-store' });
     const data: unknown = await res.json();
     let url: string | null = null;
     if (data && typeof data === 'object' && 'url' in data && typeof data.url === 'string') {
       url = data.url;
     }
-    if (url && url.startsWith('http')) {
-      useStore.setState({ serverUrl: url });
-      useStore.getState().connect();
-      return;
+    let lanUrl: string | null = null;
+    if (data && typeof data === 'object' && 'lanUrl' in data && typeof data.lanUrl === 'string') {
+      lanUrl = data.lanUrl;
+    }
+    // Prefer direct LAN when the phone shares the PC's WiFi: the Cloudflare
+    // tunnel adds a full WAN round trip to every streaming frame. Probe with
+    // a short timeout; any HTTP response (even 401/404) proves reachability.
+    const candidates = [lanUrl, url].filter(
+      (u): u is string => !!u && u.startsWith('http'),
+    );
+    for (const base of candidates) {
+      try {
+        const probe = fetch(base + '/api/sync-status', { cache: 'no-store' });
+        const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('lan-timeout')), 1500));
+        const r = (await Promise.race([probe, timeout])) as { status?: number };
+        if (r && typeof r.status === 'number' && r.status < 500) {
+          console.log('[bootstrap] base', base, base === lanUrl ? '(lan)' : '(tunnel)');
+          useStore.setState({ serverUrl: base });
+          useStore.getState().connect();
+          return;
+        }
+      } catch {
+        // unreachable — try the next candidate.
+      }
     }
   } catch {
     // Gist unreachable — retry below.

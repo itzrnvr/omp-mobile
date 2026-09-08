@@ -92,7 +92,7 @@ function ChatInputBase({
   const ctxPct = ctxWindow > 0 && lastUsage ? lastUsage.totalTokens / ctxWindow : 0;
 
   return (
-    <View style={[styles.container, { paddingBottom: spacing.md + bottomInset }]}>
+    <View style={[styles.container, { paddingBottom: spacing.md + Math.max(bottomInset, 10) }]}>
       {pendingSteers && pendingSteers.length > 0 && (
         <View style={styles.queueWrap}>
           {pendingSteers.map((q, i) => (
@@ -256,16 +256,16 @@ const styles = StyleSheet.create({
   input: {
     color: colors.text,
     fontSize: 18,
-    lineHeight: 24,
-    minHeight: 26,
+    minHeight: 30,
     maxHeight: 140,
     paddingVertical: 2,
     paddingHorizontal: 8,
     paddingBottom: 26,
   },
-  row: { flexDirection: "row", alignItems: "center", gap: 17, paddingHorizontal: 4 },
+  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4 },
   activity: { flexDirection: "row", alignItems: "center" },
   ctxButton: {
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -276,9 +276,9 @@ const styles = StyleSheet.create({
   },
   ctxText: { fontFamily: "monospace", fontSize: 12, color: "#9b9b9b" },
   spacer: { flex: 1 },
-  modelButton: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 150 },
+  modelButton: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 150, flexShrink: 1 },
+  modelLabel: { fontSize: 17, fontWeight: "500", color: "#ececec", flexShrink: 1 },
   modelButtonTight: { maxWidth: 104 },
-  modelLabel: { fontSize: 17, fontWeight: "500", color: "#ececec" },
   micButton: { alignItems: "center", justifyContent: "center" },
   send: {
     width: 38,

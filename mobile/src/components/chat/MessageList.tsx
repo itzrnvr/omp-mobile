@@ -148,20 +148,28 @@ function ActionRow({ text, onFork }: { text: string; onFork: () => void }) {
   };
   return (
     <View style={styles.actions}>
-      <Pressable onPress={doCopy} accessibilityLabel="Copy response">
-        <Icon name={copied ? "check" : "copy"} size={19} color={copied ? colors.link : "#8e8e8e"} />
+      {/* 44dp visible target + hitSlop = ~56dp effective (Material min 48). */}
+      <Pressable
+        onPress={doCopy}
+        accessibilityLabel="Copy response"
+        style={styles.actionBtn}
+        hitSlop={6}
+      >
+        <Icon name={copied ? "check" : "copy"} size={20} color={copied ? colors.link : "#8e8e8e"} />
       </Pressable>
-      <Pressable onPress={onFork} accessibilityLabel="Branch conversation from here">
-        <Icon name="branch" size={19} color="#8e8e8e" />
+      <Pressable
+        onPress={onFork}
+        accessibilityLabel="Branch conversation from here"
+        style={styles.actionBtn}
+        hitSlop={6}
+      >
+        <Icon name="branch" size={20} color="#8e8e8e" />
       </Pressable>
     </View>
   );
 }
 
 interface MessageListProps {
-  messages: OmpMessage[];
-  streamingText?: string;
-  streamingThinking?: string;
   isGenerating?: boolean;
   toolCalls?: ToolCallInfo[];
   notices?: { level: string; message: string }[];
@@ -206,9 +214,6 @@ const TurnRow = React.memo(function TurnRow({
 });
 
 export function MessageList({
-  messages,
-  streamingText,
-  streamingThinking,
   isGenerating,
   toolCalls,
   notices,
@@ -216,13 +221,16 @@ export function MessageList({
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const prevMsgCount = useRef(0);
   // True while the user is parked at the bottom; auto-scroll only then, so
   // reading older content never fights the stream (2026-09-05 UX fix).
   const nearBottomRef = useRef(true);
   const [liveOpen, setLiveOpen] = useState(true);
   // Selector subscriptions only: a whole-store subscription re-rendered the
   // whole list on every streaming delta (lag/glitch storm, 2026-09-05).
+  // Per-delta fields are selected HERE (not passed from ChatScreen) so the
+  // screen shell never re-renders mid-stream (dropped-tap fix, 2026-09-06).
+  const messages = useStore((s) => s.messages);
+  const streamingText = useStore((s) => s.streamingText);
   const currentSessionId = useStore((s) => s.currentSessionId);
   const forkSession = useStore((s) => s.forkSession);
   const historyTruncated = useStore((s) => s.historyTruncated);
@@ -247,9 +255,20 @@ export function MessageList({
 
   // ONE scroll rule (2026-09-06 simplification): whenever the content
   // grows and the user is parked at the bottom, pin. No timers, no intervals.
-  const handleContentSize = () => {
-    if (nearBottomRef.current) {
-      listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
+  // Pin with the REAL content height: scrollToOffset(MAX_SAFE_INTEGER) does
+  // NOT clamp on this RN/Android — it parked the viewport beyond all content
+  // and the virtualized list rendered nothing (blank-list root cause,
+  // proven by A/B on emulator 2026-09-06). Finite offsets always clamp.
+  const contentHeightRef = useRef(0);
+  const handleContentSize = (_w: number, h: number) => {
+    const prev = contentHeightRef.current;
+    contentHeightRef.current = h;
+    // Pin while parked at bottom. ALSO re-pin whenever content SHRINKS:
+    // after a live turn commits, the streaming footer is replaced by shorter
+    // committed rows — the scroll offset can end up past the new content end
+    // (blank tail). A shrink re-pin always lands back on real content.
+    if (nearBottomRef.current || h < prev) {
+      listRef.current?.scrollToOffset({ offset: h, animated: false });
     }
   };
 
@@ -269,6 +288,29 @@ export function MessageList({
   const items = useMemo(() => groupTurns(messages), [messages]);
 
   const hasContent = items.length > 0 || !!isGenerating;
+  const prevCount = useRef(0);
+  // Bulk history load settle: VirtualizedList sizes off-screen cells with
+  // ESTIMATES; the real content height lands smaller after cells measure,
+  // and Android does not always re-fire onContentSizeChange on that shrink —
+  // the pin offset ends up past the content end (blank tail). Two finite
+  // re-pins (60ms/400ms) let the estimate settle, then land on true bottom.
+  useEffect(() => {
+    const delta = items.length - prevCount.current;
+    prevCount.current = items.length;
+    if (delta <= 1) return;
+    const pin = () => {
+      nearBottomRef.current = true;
+      listRef.current?.scrollToOffset({ offset: contentHeightRef.current, animated: false });
+    };
+    const t1 = setTimeout(pin, 60);
+    const t2 = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [items.length]);
 
   // Re-open the working group at the start of each turn.
   useEffect(() => {
@@ -332,7 +374,7 @@ export function MessageList({
               />
               {streamingText && liveOpen ? (
                 <View style={styles.answerWrap}>
-                  <MarkdownView markdown={streamingText + " ▋"} />
+                  <MarkdownView markdown={streamingText + " ▋"} isStreaming />
                 </View>
               ) : null}
             </View>
@@ -344,7 +386,7 @@ export function MessageList({
           style={styles.scrollButton}
           onPress={() => {
             nearBottomRef.current = true;
-            listRef.current?.scrollToOffset({ offset: Number.MAX_SAFE_INTEGER, animated: false });
+            listRef.current?.scrollToOffset({ offset: contentHeightRef.current, animated: false });
           }}
         >
           <Icon name="chevron-down" size={18} color={colors.text} />
@@ -371,7 +413,14 @@ const styles = StyleSheet.create({
   },
   answerWrap: { marginTop: 2 },
   emptyResponse: { color: colors.textMuted, fontSize: 14, marginTop: spacing.sm },
-  actions: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 18 },
+  actions: { flexDirection: "row", alignItems: "center", gap: 2, marginLeft: -10, marginTop: 6 },
+  actionBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+  },
   scrollButton: {
     position: "absolute",
     bottom: spacing.lg,

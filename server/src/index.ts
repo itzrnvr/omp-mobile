@@ -345,6 +345,15 @@ function extOwns(sessionId: string | null | undefined): boolean {
   return false;
 }
 
+/** Modern-proto (proto-2) owner — safe to trust for stream suppression. */
+function extOwnsModern(sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false;
+  for (const [ws, c] of extConns) {
+    if (c.sessionId === sessionId && ws.readyState === 1 && c.proto === EXT_PROTO_CURRENT) return true;
+  }
+  return false;
+}
+
 /** Modern-proto owner (safe to route steering to). */
 function extStaleOwner(sessionId: string | null | undefined): boolean {
   if (!sessionId) return false;
@@ -398,8 +407,15 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     conn.proto = typeof m.proto === "number" ? m.proto : 1;
     console.log("[ext] hello proto=" + conn.proto + " session=" + (conn.sessionId || "none").slice(0, 8));
     if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
-    broadcastMobile({ type: 'ext_session', sessionId: conn.sessionId, active: true });
-    console.log(`[ext] hello session=${(conn.sessionId || 'none').slice(0, 8)}`);
+    // running lets a reconnecting app recover the Stop button for a turn
+    // whose agent_start fired before it opened/connected (ext also reports
+    // its live tuiRunning in the hello).
+    broadcastMobile({
+      type: 'ext_session',
+      sessionId: conn.sessionId,
+      active: true,
+      running: typeof m.running === 'boolean' ? m.running : (extRunning.get(conn.sessionId || '') ?? false),
+    });
     return;
   }
   if (m.type === 'ext_bye') {
@@ -410,8 +426,9 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     }
     return;
   }
-  if (m.type === 'ext_entry' || m.type === 'ext_queue') {
-    broadcastMobile({ type: m.type, sessionId: conn.sessionId || null, entry: m.entry, pending: m.pending });
+  if (m.type === 'ext_entry') {
+    // Realtime entry mirror: full entry payload + leaf id (branch-aware).
+    broadcastMobile({ type: m.type, sessionId: conn.sessionId || null, entry: m.entry, leafId: m.leafId ?? null });
     return;
   }
   if (m.type === 'ext_steer_ack') {
@@ -424,8 +441,14 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     conn.sessionId = sid;
     extLastEvent.set(sid, Date.now());
     const ev = m.event || {};
-    if (ev.type === 'agent_start') extRunning.set(sid, true);
-    if (ev.type === 'agent_end') extRunning.set(sid, false);
+    if (ev.type === 'agent_start') {
+      extRunning.set(sid, true);
+      broadcastMobile({ type: 'ext_session', sessionId: sid, active: true, running: true });
+    }
+    if (ev.type === 'agent_end') {
+      extRunning.set(sid, false);
+      broadcastMobile({ type: 'ext_session', sessionId: sid, active: true, running: false });
+    }
     if (conn.proto === EXT_PROTO_CURRENT) extModernLast.set(sid, Date.now());
     broadcastMobile({ type: 'ext_event', sessionId: sid, event: ev });
   }
@@ -443,7 +466,17 @@ function startSessionWatcher(ws: WebSocket, sessionId: string, state: Connection
   sessionWatchers.set(ws, entry);
   const tick = async () => {
     if (state.ompKill) return;
-    if (extModernRecentlyActive(sessionId)) return;
+    // Suppress while a modern ext owns the live stream: turn-active
+    // (agent_start..end) OR any modern traffic within 15s — token bursts
+    // have thinking/tool gaps far longer than 2s, and each duplicate push
+    // re-renders the whole list (jank). Outer 60s bound: a silently dead ext
+    // (no traffic at all) falls back to polling.
+    if (
+      extOwnsModern(sessionId) &&
+      (extIsRunning(sessionId) || extModernRecentlyActive(sessionId, 15000)) &&
+      extRecentlyActive(sessionId, 60000)
+    )
+      return;
     try {
       const file = await findSessionFile(sessionId);
       if (!file) return;

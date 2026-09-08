@@ -37,7 +37,7 @@ function ToolBody({ step }: { step: TraceStep }) {
   const [open, setOpen] = useState(false);
   return (
     <View>
-      <Pressable style={styles.toolHead} onPress={() => setOpen((o) => !o)}>
+      <Pressable style={styles.toolHead} onPress={() => setOpen((o) => !o)} hitSlop={8}>
         <RNText style={styles.toolName}>{step.name || "tool"}</RNText>
         <RNText style={styles.toolStatus}>
           {step.status === "running" ? "…" : step.isError ? "error" : "done"}
@@ -86,6 +86,7 @@ export function Trace({
     <View>
       <Pressable
         style={styles.header}
+        hitSlop={10}
         onPress={() => (onToggle ? onToggle() : setInternalOpen((o) => !o))}
       >
         <RNText style={styles.headerText}>
@@ -126,14 +127,16 @@ export function Trace({
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
+  header: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 },
   headerText: { fontSize: 13, color: "#8e8e8e" },
-  body: { paddingLeft: spacing.md, gap: spacing.sm, paddingBottom: spacing.xs },
-  row: { flexDirection: "row", gap: 8 },
+  // Uniform rhythm: every step gets the same vertical slot (row padding) and
+  // the same inter-step gap, so reasoning/tool/response rows look consistent.
+  body: { paddingLeft: spacing.md, gap: 10, paddingBottom: spacing.xs },
+  row: { flexDirection: "row", gap: 8, paddingVertical: 4, alignItems: "flex-start" },
   rowBody: { flex: 1, gap: 2 },
   label: { fontSize: 12, color: "#8e8e8e" },
   text: { fontSize: 13.5, lineHeight: 19, color: "#b5b5b5" },
-  toolHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  toolHead: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
   toolName: { fontSize: 13.5, color: "#9ccafa", fontWeight: "600" },
   toolStatus: { fontSize: 11.5, color: "#8e8e8e" },
   mono: {

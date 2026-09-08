@@ -11,7 +11,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Keyboard } from "react-native";
+import { useKeyboardState } from "react-native-keyboard-controller";
 import {
   View,
   StyleSheet,
@@ -34,6 +34,7 @@ import { ModelSheet } from "../components/chat/ModelSheet";
 import { Drawer } from "../components/nav/Drawer";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { useStore } from "../store";
+import { useShallow } from "zustand/react/shallow";
 import { openChat } from "../navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MODEL_PRESETS } from "../types";
@@ -44,34 +45,14 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Manual IME padding: KAV on RN 0.79 edge-to-edge is unreliable (composer
-  // stuck up after hide, glue behind composer). keyboardDidShow/Hide gives
-  // exact heights both ways (2026-09-05).
-  const [kbHeight, setKbHeight] = useState(0);
-  // Fallback: some IMEs (floating pill) skip keyboardDidHide — poll visibility
-  // while lifted so the composer never stays stuck up (2026-09-05).
-  useEffect(() => {
-    if (kbHeight <= 0) return;
-    const id = setInterval(() => {
-      if (!Keyboard.isVisible()) setKbHeight(0);
-    }, 400);
-    return () => clearInterval(id);
-  }, [kbHeight]);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", (e) =>
-      setKbHeight(e.endCoordinates.height),
-    );
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKbHeight(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  // IME lift via react-native-keyboard-controller (WindowInsets-based).
+  // RN's keyboardDidShow NEVER fires on API 34 edge-to-edge: adjustResize
+  // does not resize the window there, and RN's Android keyboard events are
+  // resize-driven — the composer stayed half-buried behind the IME (POCO,
+  // 2026-09-08). This hook reports the true IME height on every API level.
+  const kbHeight = useKeyboardState((s) => (s.isVisible ? s.height : 0));
 
   const {
-    messages,
-    streamingText,
-    streamingThinking,
     isGenerating,
     sendMessage,
     cancelGeneration,
@@ -83,7 +64,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     pendingSteers,
     removePendingSteer,
     steerModes,
-    tuiQueuePending,
     externalActive,
     externalLive,
     currentSessionId,
@@ -98,7 +78,35 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     uploadAttachment,
     addAttachment,
     serverStatus,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      isGenerating: s.isGenerating,
+      sendMessage: s.sendMessage,
+      cancelGeneration: s.cancelGeneration,
+      loadSession: s.loadSession,
+      startNewSession: s.startNewSession,
+      restoreOrNew: s.restoreOrNew,
+      steerQueue: s.steerQueue,
+      removeSteer: s.removeSteer,
+      pendingSteers: s.pendingSteers,
+      removePendingSteer: s.removePendingSteer,
+      steerModes: s.steerModes,
+      externalActive: s.externalActive,
+      externalLive: s.externalLive,
+      currentSessionId: s.currentSessionId,
+      errorToast: s.errorToast,
+      selectedModel: s.selectedModel,
+      thinkingLevel: s.thinkingLevel,
+      selectedCwd: s.selectedCwd,
+      toolCalls: s.toolCalls,
+      notices: s.notices,
+      sessionTitle: s.sessionTitle,
+      wsStatus: s.wsStatus,
+      uploadAttachment: s.uploadAttachment,
+      addAttachment: s.addAttachment,
+      serverStatus: s.serverStatus,
+    })),
+  );
 
   const sessionId = route?.params?.sessionId;
 
@@ -219,12 +227,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
         </Pressable>
       </View>
 
-      {tuiQueuePending ? (
-        <View style={styles.syncBanner}>
-          <Icon name="activity" size={13} color="#9ccafa" />
-          <Text size="xs" color="textSecondary">Steering queued in the TUI - delivers at the next boundary</Text>
-        </View>
-      ) : null}
       {currentSessionId && !externalLive[currentSessionId] ? (
         <View style={styles.syncBannerDim}>
           <Icon name="cloud-offline" size={13} color="#9b9b9b" />
@@ -243,9 +245,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
       ) : null}
 
       <MessageList
-        messages={messages}
-        streamingText={streamingText}
-        streamingThinking={streamingThinking}
         isGenerating={isGenerating}
         toolCalls={toolCalls}
         notices={notices}

@@ -1,14 +1,63 @@
 /*
- * PURPOSE: Minimal markdown renderer — pure Text, no WebView, no KaTeX.
- * The previous react-native-markdown-display + KaTeX-WebView combo was the
- * main source of list glitches (heavy native views inside list rows).
+ * PURPOSE: Minimal markdown renderer — pure Text for everything except block
+ * math. Block math ($$...$$) in COMMITTED messages renders via a self-sizing
+ * KaTeX WebView card; while streaming it stays mono text (no WebView churn
+ * mid-stream — that was the old glitch source). Math-free turns mount zero
+ * WebViews, so the plain-Text fast path covers the common case.
  * Supports: headings, bullets, numbered lists, fenced code (mono block),
- * $$ math blocks (mono block, plain text), inline `code` and **bold**.
+ * $$ math blocks, inline `code` and **bold**.
+ *
+ * HISTORY:
+ * - react-native-enriched-markdown: codegen spec fails on RN 0.79. Removed.
+ * - react-native-math-view: missing native component -> SIGABRT. Removed.
+ * - react-native-marked: internal white FlatList. Removed.
+ * - Inline $...$ math renders as plain text (no native typesetter on SDK 53).
  */
 
 import React from "react";
 import { Text as RNText, View, StyleSheet } from "react-native";
+import { WebView } from "react-native-webview";
 import { colors, spacing } from "../../theme";
+
+function katexHtml(tex: string): string {
+  const escaped = JSON.stringify(tex);
+  return [
+    "<!doctype html><html><head>",
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">',
+    '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>',
+    "<style>html,body{background:#1b1b1b;margin:0;padding:8px 10px;color:#f2f2f2;overflow:hidden}</style>",
+    '</head><body><div id="m"></div>',
+    "<script>",
+    'try { katex.render(' + escaped + ', document.getElementById("m"), { throwOnError: false, displayMode: true }); }',
+    'catch (e) { document.getElementById("m").textContent = ' + escaped + "; }",
+    "window.ReactNativeWebView.postMessage(String(document.body.scrollHeight));",
+    "</script></body></html>",
+  ].join("\n");
+}
+
+function MathBlock({ tex }: { tex: string }) {
+  const [height, setHeight] = React.useState(60);
+  return (
+    <WebView
+      source={{ html: katexHtml(tex) }}
+      style={{
+        height,
+        backgroundColor: "#1b1b1b",
+        borderColor: "#2f2f2f",
+        borderWidth: 1,
+        borderRadius: 10,
+        marginVertical: 6,
+      }}
+      scrollEnabled={false}
+      javaScriptEnabled
+      onMessage={(e) => {
+        const h = parseInt(e.nativeEvent.data, 10);
+        if (Number.isFinite(h) && h > 0) setHeight(h + 4);
+      }}
+    />
+  );
+}
 
 function inlineSegments(text: string, keyPrefix: string) {
   const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
@@ -32,7 +81,7 @@ function inlineSegments(text: string, keyPrefix: string) {
   });
 }
 
-export function MarkdownView({ markdown }: { markdown: string }) {
+export function MarkdownView({ markdown, isStreaming }: { markdown: string; isStreaming?: boolean }) {
   const lines = (markdown || "").split("\n");
   const out: React.ReactNode[] = [];
   let fence: string[] | null = null;
@@ -48,14 +97,19 @@ export function MarkdownView({ markdown }: { markdown: string }) {
     }
     fence = null;
   };
-  const flushMath = (key: string) => {
-    if (math && math.length) {
+  const renderMath = (key: string, tex: string) => {
+    if (isStreaming) {
       out.push(
         <RNText key={key} style={styles.block}>
-          {math.join("\n")}
+          {tex}
         </RNText>,
       );
+    } else {
+      out.push(<MathBlock key={key} tex={tex} />);
     }
+  };
+  const flushMath = (key: string) => {
+    if (math && math.length) renderMath(key, math.join("\n"));
     math = null;
   };
 
@@ -73,8 +127,10 @@ export function MarkdownView({ markdown }: { markdown: string }) {
     if (line.trim() === "$$" || line.trim().startsWith("$$")) {
       if (math) flushMath("m" + i);
       else math = [];
-      if (line.trim().startsWith("$$") && line.trim().length > 2 && line.trim().endsWith("$$")) {
-        out.push(<RNText key={"mi" + i} style={styles.block}>{line.trim().slice(2, -2)}</RNText>);
+      const t = line.trim();
+      if (t.length > 4 && t.endsWith("$$")) {
+        // Single-line block math: $$...$$
+        renderMath("mi" + i, t.slice(2, -2));
         math = null;
       }
       return;

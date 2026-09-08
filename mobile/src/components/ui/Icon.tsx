@@ -43,7 +43,9 @@ export type IconName =
   | "shield"
   | "activity"
   | "rename"
-  | "trash";
+  | "trash"
+  | "star"
+  | "star-outline";
 
 const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   add: "add",
@@ -80,6 +82,8 @@ const MAP: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   activity: "pulse-outline",
   rename: "create-outline",
   trash: "trash-outline",
+  star: "star",
+  "star-outline": "star-outline",
 };
 
 interface IconProps {

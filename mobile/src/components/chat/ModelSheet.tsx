@@ -46,6 +46,8 @@ function ModelSheetBase({ visible, onClose }: ModelSheetProps) {
     selectedCwd,
     setSelectedCwd,
     recentModels,
+  favoriteModels,
+  toggleFavorite,
     serverStatus,
   } = useStore();
   const refreshStatus = useStore((s) => s.refreshStatus);
@@ -102,6 +104,52 @@ function ModelSheetBase({ visible, onClose }: ModelSheetProps) {
     .map((v) => catalog.find((m) => m.value === v))
     .filter((m): m is ModelCatalogEntry => !!m);
 
+  const favs = favoriteModels
+    .map((v) => catalog.find((m) => m.value === v))
+    .filter((m): m is ModelCatalogEntry => !!m);
+
+  /** One model row: star (left, 36dp + hitSlop) + text + select check. */
+  function ModelRow({
+  m,
+  selected,
+  fav,
+  onPick,
+  onStar,
+  }: {
+  m: ModelCatalogEntry;
+  selected: boolean;
+  fav: boolean;
+  onPick: (value: string) => void;
+  onStar: (value: string) => void;
+  }) {
+  return (
+    <View style={styles.modelRowWrap}>
+      <Pressable
+        style={styles.starBtn}
+        hitSlop={8}
+        onPress={() => onStar(m.value)}
+        accessibilityLabel={fav ? "Unfavourite model" : "Favourite model"}
+      >
+        <Icon name={fav ? "star" : "star-outline"} size={20} color={fav ? "#e8b64c" : "#6f6f6f"} />
+      </Pressable>
+      <Pressable
+        style={({ pressed }) => [styles.modelRowInner, pressed && styles.modelRowPressed]}
+        onPress={() => onPick(m.value)}
+      >
+        <View style={styles.modelText}>
+          <RNText style={styles.modelName}>{m.label}</RNText>
+          <RNText style={styles.modelDesc}>
+            {m.value}
+            {m.contextWindow ? ` · ${fmtCtx(m.contextWindow)} ctx` : ""}
+            {m.reasoning ? " · reasoning" : ""}
+          </RNText>
+        </View>
+        {selected ? <Icon name="check" size={20} color={colors.link} /> : null}
+      </Pressable>
+    </View>
+  );
+  }
+
   const toggleProvider = (name: string) => {
     LayoutAnimation.easeInEaseOut();
     setOpenProviders((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -115,7 +163,27 @@ function ModelSheetBase({ visible, onClose }: ModelSheetProps) {
   return (
     <>
     <Sheet visible={visible} onClose={onClose}>
-      <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+        // Last provider row was clipped by the system nav bar (POCO).
+        contentContainerStyle={{ paddingBottom: 48 }}
+      >
+        {favs.length > 0 && (
+          <>
+            <RNText style={styles.sectionTitle}>FAVOURITES</RNText>
+            {favs.map((m) => (
+              <ModelRow
+                key={m.value}
+                m={m}
+                selected={selectedModel === m.value}
+                fav
+                onPick={pick}
+                onStar={toggleFavorite}
+              />
+            ))}
+          </>
+        )}
         {recents.length > 0 && (
           <>
             <RNText style={styles.sectionTitle}>RECENT</RNText>
@@ -184,23 +252,14 @@ function ModelSheetBase({ visible, onClose }: ModelSheetProps) {
               </Pressable>
               {open &&
                 group.models.map((m) => (
-                  <Pressable
+                  <ModelRow
                     key={m.value}
-                    style={({ pressed }) => [styles.modelRow, pressed && styles.modelRowPressed]}
-                    onPress={() => pick(m.value)}
-                  >
-                    <View style={styles.modelText}>
-                      <RNText style={styles.modelName}>{m.label}</RNText>
-                      <RNText style={styles.modelDesc}>
-                        {m.value}
-                        {m.contextWindow ? ` · ${fmtCtx(m.contextWindow)} ctx` : ""}
-                        {m.reasoning ? " · reasoning" : ""}
-                      </RNText>
-                    </View>
-                    {selectedModel === m.value ? (
-                      <Icon name="check" size={20} color={colors.link} />
-                    ) : null}
-                  </Pressable>
+                    m={m}
+                    selected={selectedModel === m.value}
+                    fav={favoriteModels.includes(m.value)}
+                    onPick={pick}
+                    onStar={toggleFavorite}
+                  />
                 ))}
             </View>
           );
@@ -274,13 +333,25 @@ const styles = StyleSheet.create({
   },
   providerName: { fontSize: 15, fontWeight: "600", color: colors.textSecondary },
   providerCount: { fontSize: 12, color: "#6f6f6f", fontWeight: "400" },
-  modelRow: {
+  modelRowWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 4,
+    borderRadius: 13,
+  },
+  starBtn: {
+    width: 40,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modelRowInner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginLeft: 12,
+    paddingRight: 12,
     borderRadius: 13,
   },
   modelRowPressed: { backgroundColor: "#2c2c2c" },

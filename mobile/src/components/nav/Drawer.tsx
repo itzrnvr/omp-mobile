@@ -24,7 +24,7 @@ import {
   Animated,
   Easing,
   FlatList,
-  LayoutAnimation,
+
   Text as RNText,
   Dimensions,
 } from "react-native";
@@ -168,7 +168,6 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
   }
 
   const toggleDir = (dir: string) => {
-    LayoutAnimation.easeInEaseOut();
     setOpenDirs((prev) => {
       const cur = prev[dir] ?? dir === currentDir;
       return { ...prev, [dir]: !cur };

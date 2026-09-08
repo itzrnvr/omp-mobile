@@ -419,7 +419,7 @@ export function forkSession(sessionId: string, messageCount: number): string | n
     if (messages === 0) return null;
     const dir = filePath.split(sep).slice(0, -1).join(sep);
     const stamp = new Date().toISOString().replace(/[:.]/g, (c) => (c === ":" ? "-" : c));
-    const newName = `${stamp}\u2080${newId}.jsonl`;
+    const newName = stamp + "_" + newId + ".jsonl";
     writeFileSync(join(dir, newName), out.join("\n") + "\n", "utf-8");
     return newId;
   } catch {

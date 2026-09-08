@@ -63,8 +63,8 @@ let lastCtx: { abort?: () => void; isIdle?: () => boolean } | null = null;
 const pendingSteers: string[] = [];
 // True between agent_start and agent_end of THIS TUI (mid-turn vs idle).
 let tuiRunning = false;
-let queuePending = false;
-let wrappedSm: unknown = null;
+// Idempotency flag for the onEntryAppended wrap (symbol-ish key on the sm).
+const WRAP_FLAG = "__ompMobileEntryWrapped";
 
 function connect(): void {
   if (closed) return;
@@ -74,7 +74,7 @@ function connect(): void {
     ws = new W(URL);
     ws.onopen = () => {
       retry = 0;
-      post({ type: "ext_hello", sessionId, proto: EXT_PROTO });
+      post({ type: "ext_hello", sessionId, proto: EXT_PROTO, running: tuiRunning });
     };
     ws.onmessage = (ev: MessageEvent) => {
       // Bridge forwards app sends for THIS session as steering injections.
@@ -138,11 +138,25 @@ function connect(): void {
 
 function post(obj: Record<string, unknown>): void {
   try {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify(obj));
+      postCount++;
+      if (postCount % 200 === 1) {
+        log("post: sent #" + postCount + " type=" + String(obj.type) + " rs=" + ws.readyState);
+      }
+    } else {
+      dropCount++;
+      if (dropCount % 50 === 1) {
+        log("post: DROPPED #" + dropCount + " type=" + String(obj.type) + " ws=" + (ws ? "rs" + ws.readyState : "null"));
+      }
+    }
   } catch {
     /* drop — watcher fallback covers gaps */
   }
 }
+
+let postCount = 0;
+let dropCount = 0;
 
 function sid(ctx: { sessionManager?: { sessionId?: string } }): string | null {
   try {
@@ -169,13 +183,72 @@ function fwd(
   }
 }
 
+/**
+ * Realtime interception framework: chain-wrap SessionManager.onEntryAppended
+ * so EVERY persisted entry (messages, model_change, compaction, steers,
+ * branches) is mirrored to the bridge the moment it lands.
+ *
+ * The TUI assigns its own sink AFTER session_start (observed: own field, not
+ * yet a function, then a later plain assignment) — a plain wrap would be
+ * silently overwritten. So install an intercepting ACCESSOR: any later
+ * assignment is captured as `inner` and still chained, and every read gets
+ * the mirroring wrapper. Idempotent per SessionManager instance.
+ */
+function wrapEntrySink(ctx: { sessionManager?: unknown }): void {
+  try {
+    const sm = ctx.sessionManager as Record<string, unknown> | undefined;
+    if (!sm || sm[WRAP_FLAG]) return;
+    let inner: ((e: unknown) => void) | null =
+      typeof sm.onEntryAppended === "function"
+        ? (sm.onEntryAppended as (e: unknown) => void)
+        : null;
+    const wrapper = (entry: unknown) => {
+      if (inner) {
+        try {
+          inner(entry);
+        } catch {
+          /* original sink errors must not break ours, and vice versa */
+        }
+      }
+      try {
+        let leafId: string | null = null;
+        try {
+          const gl = sm.getLeafId;
+          if (typeof gl === "function") {
+            leafId = (gl as () => string | null).call(sm);
+          }
+        } catch {
+          /* leafId is optional enrichment */
+        }
+        post({
+          type: "ext_entry",
+          sessionId: sessionId,
+          leafId: leafId,
+          entry: entry as Record<string, unknown>,
+        });
+      } catch {
+        /* never break the TUI */
+      }
+    };
+    Object.defineProperty(sm, "onEntryAppended", {
+      configurable: true,
+      enumerable: true,
+      get: () => wrapper,
+      set: (fn: unknown) => {
+        inner = typeof fn === "function" ? (fn as (e: unknown) => void) : null;
+      },
+    });
+    sm[WRAP_FLAG] = true;
+    log("wrapEntrySink: accessor installed (inner=" + (inner ? "yes" : "no") + ")");
+  } catch (e) {
+    log("wrapEntrySink THREW " + String(e));
+  }
+}
+
 export default function (pi: ExtensionAPI): void {
   try {
     api = pi;
     log("factory load marker RELOAD-MARKER-1788659455");
-    log("factory pi keys: " + Object.keys(pi as unknown as object).join(","));
-    const pr = pi as unknown as Record<string, unknown>;
-    log("sub keys: extension=[" + Object.keys((pr.extension as object) || {}).join(",") + "] runtime=[" + Object.keys((pr.runtime as object) || {}).join(",") + "] events=[" + Object.keys((pr.events as object) || {}).join(",") + "]"); // sub keys
     // ONLY in the interactive TUI. Subcommand runs (models ls, acp, ps, mcp)
     // also load extensions; a WS reconnect timer there would keep the CLI
     // process alive forever (and wedge the bridge spawnSync at boot).
@@ -189,12 +262,15 @@ export default function (pi: ExtensionAPI): void {
     pi.on("session_start", (_e, ctx) => {
       lastCtx = ctx as { abort?: () => void; isIdle?: () => boolean };
       sid(ctx);
+      wrapEntrySink(ctx as { sessionManager?: unknown });
     });
     pi.on("session_switch", (_e, ctx) => {
       sid(ctx);
+      wrapEntrySink(ctx as { sessionManager?: unknown });
     });
     pi.on("session_branch", (_e, ctx) => {
       sid(ctx);
+      wrapEntrySink(ctx as { sessionManager?: unknown });
     });
     pi.on("session_shutdown", () => {
       post({ type: "ext_bye", sessionId });
@@ -202,21 +278,12 @@ export default function (pi: ExtensionAPI): void {
 
     pi.on("agent_start", (_e, ctx) => {
       tuiRunning = true;
-      try {
-        const sm = ctx.sessionManager as unknown as object;
-        const ev = (pi as unknown as { events?: object }).events;
-        log("INTROSPECT sm keys: " + Object.keys(sm).join(","));
-        log("INTROSPECT sm proto: " + Object.getOwnPropertyNames(Object.getPrototypeOf(sm)).join(","));
-        log("INTROSPECT events keys: " + Object.keys(ev || {}).join(",") + " proto: " + Object.getOwnPropertyNames(Object.getPrototypeOf(ev || {})).join(","));
-      } catch (e) {
-        log("INTROSPECT THREW " + String(e));
-      }
+      wrapEntrySink(ctx as { sessionManager?: unknown });
       lastCtx = ctx as { abort?: () => void };
       fwd(ctx, { type: "agent_start" });
     });
     pi.on("agent_end", (_e, ctx) => {
       tuiRunning = false;
-      log("agent_end ctx keys: " + Object.keys(ctx as unknown as object).join(",") + " | pi keys now: " + Object.keys(pi as unknown as object).join(","));
       // Hook context: the only place sendUserMessage reliably lands. Deliver
       // queued mobile steers at the turn boundary (TUI steering semantics).
       while (pendingSteers.length > 0) {

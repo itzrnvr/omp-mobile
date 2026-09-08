@@ -17,6 +17,7 @@ import type { Subprocess } from "bun";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
 
 export type TunnelStatus = "stopped" | "starting" | "active" | "error";
 
@@ -40,13 +41,37 @@ function resolveCloudflared(): string {
   return "cloudflared";
 }
 
-/** Publish the current tunnel URL to the bootstrap gist (best-effort, fire-and-forget). */
-async function publishTunnelUrl(url: string): Promise<void> {
+/*
+ * Best LAN IPv4 base URL for this port (phone on same WiFi skips the tunnel),
+ * then: publish the tunnel URL to the bootstrap gist (best-effort).
+ */
+function lanBaseUrl(port: number): string | null {
+  try {
+    const all: string[] = [];
+    for (const list of Object.values(networkInterfaces())) {
+      for (const a of list || []) {
+        if (a && a.family === "IPv4" && !a.internal) all.push(a.address);
+      }
+    }
+    const pref = ["192.168.", "10.", "172.16.", "172.17.", "172.18."];
+    all.sort((x, y) => {
+      const px = pref.findIndex((p) => x.startsWith(p));
+      const py = pref.findIndex((p) => y.startsWith(p));
+      return (px < 0 ? 99 : px) - (py < 0 ? 99 : py);
+    });
+    return all.length ? "http://" + all[0] + ":" + String(port) : null;
+  } catch {
+    return null;
+  }
+}
+async function publishTunnelUrl(url: string, port: number): Promise<void> {
   try {
     const tokenProc = Bun.spawnSync(["gh", "auth", "token"]);
     const token = new TextDecoder().decode(tokenProc.stdout).trim();
     if (!token) return;
-    const content = JSON.stringify({ url, updated: Date.now() });
+    // LAN base URL: same-WiFi phones connect directly (no cloud round trip,
+    // seconds of latency saved on every frame). App probes LAN first.
+    const content = JSON.stringify({ url, lanUrl: lanBaseUrl(port), updated: Date.now() });
     await fetch(`https://api.github.com/gists/${GIST_ID}`, {
       method: "PATCH",
       headers: {
@@ -102,7 +127,7 @@ export async function startTunnel(port: number): Promise<TunnelState> {
       if (urlMatch) {
         currentUrl = urlMatch[0];
         currentStatus = "active";
-        void publishTunnelUrl(currentUrl);
+        void publishTunnelUrl(currentUrl, port);
         reader.releaseLock();
         return { url: currentUrl, status: "active" };
       }

@@ -25,7 +25,7 @@ design-ref/        reference HTML (palette + interactions)
 ## Wire protocol (WS, token auth `?token=`)
 
 Client→server: `send {content,sessionId,model,thinking,autoApprove,cwd}`, `get_history`, `get_status`, `refresh_models`, `list_sessions`, `delete_session`, `rename_session`, `fork_session`, `start_tunnel`.
-Server→client: `event {event,sessionId}` (omp JSON-mode events verbatim), `complete`, `error`, `sessions`, `history {messages,title,externallyActive}`, `status`, `tunnel`, `forked/deleted/renamed`, `uploaded`, `ext_event {sessionId,event}`, `ext_session {sessionId,active}`.
+Server→client: `event {event,sessionId}` (omp JSON-mode events verbatim), `complete`, `error`, `sessions`, `history {messages,title,externallyActive}`, `status`, `tunnel`, `forked/deleted/renamed`, `uploaded`, `ext_event {sessionId,event}`, `ext_entry {sessionId,entry,leafId}` (realtime mirror of every persisted session entry), `ext_session {sessionId,active}`.
 
 Extension→bridge (`/ext` path): `ext_hello {sessionId}`, `ext_event {sessionId,event}`, `ext_bye`. Bridge rebroadcasts `ext_event`/`ext_session` to all mobile clients; clients ignore events for other sessions.
 
@@ -79,4 +79,8 @@ Devices: emulator-5554 (x86_64, primary test target per user), tablet 192.168.1.
 
 Working end-to-end and verified on-device: live streaming trace (working/worked, reasoning + tool rows with ARGS/RESULT), full searchable model catalog + recents + reasoning levels, context ring + popover, drawer (virtualized, dir chips + per-row dir tags, search, long-press actions), session CRUD + fork, restore-on-relaunch, attachments, dictation, folder picker (navigate/create/use), steering queue with visible chip, TUI↔mobile token-level sync + single-writer guard, connecting/reconnecting indicator, flash-free session load (reveal gate + settle cascade + history dedupe).
 
-Open/known: KaTeX block math via WebView (inline math = mono text); watcher fallback is message-level (~1s) when no TUI extension attached.
+Open/known: block math ($$...$$) renders via lazy KaTeX WebView card in committed messages only — while streaming math stays mono text (zero WebView churn on math-free turns); inline $...$ math = plain text. Watcher fallback is message-level (~1s) when no TUI extension attached. TUI-side steering-queue CONTENT remains unreachable (event-hook ctx exposes only {ui}; no hasPendingMessages) — the queued-in-TUI banner was removed as dead code; app-originated steers still show their own chip.
+
+Entry mirror (verified live 2026-09-08): extension installs an intercepting ACCESSOR on SessionManager.onEntryAppended (plain wraps get silently overwritten — the TUI assigns its own sink after session_start). Every persisted entry posts `ext_entry` with getLeafId(). Client parses model_change (plain "provider/model" string) for the model, and the LIVE-ONLY model_usage entry (entry.usage {input,output,cacheRead,cacheWrite,totalTokens,...}, absent from persisted JSONL) for context — max-guarded so tiny auto-thinking sub-requests can't clobber the session total. Other types trigger an idle-only debounced history refresh (mid-turn refreshes would nuke streaming state). Message entries carry NO usage.
+
+Tooling hazard (bit us twice): file-edit transports that pass content through the transcript strip `$`/`${}` sigils — a fork filename template became a constant string and MarkdownView's $$-detection became startsWith(""). After any edit touching files with `$`/backticks/templates, byte-verify (node -e dollar-count/grep), prefer string concatenation over template literals in patched regions, and full-rewrite via the write tool when corruption appears.
