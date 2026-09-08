@@ -16,7 +16,8 @@
     "jsEngine": "hermes",
     "plugins": [
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "./plugins/withCleartextHttp"
     ]
   }
 }
