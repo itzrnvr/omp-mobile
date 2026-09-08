@@ -679,9 +679,20 @@ const server = Bun.serve({
       // Push status immediately so every client shows server + tunnel state on connect.
       void buildStatus().then((status) => sendWs(ws, { type: "status", status }));
       // Sync TUI-ownership state so the single-writer guard is correct even
-      // if the client missed earlier ext_session broadcasts (reconnects).
+      // if the client missed earlier ownership broadcasts (reconnects).
+      // running lets a mid-turn joiner recover Stop/Working: without it a
+      // client connecting after agent_start gets the banner but no footer.
       for (const c of extConns.values()) {
-        if (c.sessionId) sendWs(ws, { type: "ext_session", sessionId: c.sessionId, active: true });
+        if (c.sessionId) {
+          sendWs(ws, {
+            // NOTE: written as concatenation because the file-edit transport
+            // corrupts underscore-letter runs (ext_session -> extXsession).
+            type: 'ext' + String.fromCharCode(95) + 'session',
+            sessionId: c.sessionId,
+            active: true,
+            running: extRunning.get(c.sessionId) === true,
+          });
+        }
       }
     },
 
