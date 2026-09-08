@@ -1082,22 +1082,37 @@ async function bootstrapConnect(attempt: number): Promise<void> {
     // Probe every published LAN URL: interfaces come and go (WiFi drops, USB
     // re-enumerates on a new subnet) and a stale single URL silently degrades
     // to tunnel. lanUrl kept for older gist formats.
-    const candidates = [...lanUrls, lanUrl, url].filter(
-      (u): u is string => !!u && u.startsWith('http'),
-    );
-    for (const base of candidates) {
+    // Dedupe (lanUrl is usually already inside lanUrls) and probe in
+    // PARALLEL: serial 1.5s timeouts over 4-5 unreachable candidates stall
+    // cold start by ~7s. Worst case stays 1.5s; first reachable wins, with
+    // LAN preferred over tunnel on ties by candidate order.
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+    for (const u of [...lanUrls, lanUrl, url]) {
+      if (typeof u === 'string' && u.startsWith('http') && !seen.has(u)) {
+        seen.add(u);
+        candidates.push(u);
+      }
+    }
+    const probeOne = async (base: string): Promise<string | null> => {
       try {
         const probe = fetch(base + '/api/sync-status', { cache: 'no-store' });
         const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('lan-timeout')), 1500));
         const r = (await Promise.race([probe, timeout])) as { status?: number };
-        if (r && typeof r.status === 'number' && r.status < 500) {
-          console.log('[bootstrap] base', base, base === lanUrl ? '(lan)' : '(tunnel)');
-          useStore.setState({ serverUrl: base });
-          useStore.getState().connect();
-          return;
-        }
+        if (r && typeof r.status === 'number' && r.status < 500) return base;
       } catch {
-        // unreachable — try the next candidate.
+        // unreachable.
+      }
+      return null;
+    };
+    const settled = await Promise.all(candidates.map((c) => probeOne(c)));
+    for (let i = 0; i < candidates.length; i++) {
+      const base = candidates[i];
+      if (settled[i]) {
+        console.log('[bootstrap] base', base, base === url ? '(tunnel)' : '(lan)');
+        useStore.setState({ serverUrl: base });
+        useStore.getState().connect();
+        return;
       }
     }
   } catch {
