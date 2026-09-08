@@ -650,7 +650,6 @@ export const useStore = create<StoreState>((set, get) => {
           processEvent(msg.event, msg.sessionId);
           break;
         case 'complete':
-        case 'complete':
         case 'error': {
           const { pendingMessages } = get();
           const errText = msg.type === 'error' ? msg.message || '' : '';
@@ -666,9 +665,9 @@ export const useStore = create<StoreState>((set, get) => {
             JSON.stringify(lastM.content || []).includes(get().lastSendContent || '\u0000');
           if (errText) {
             set({ errorToast: errText });
-          setTimeout(() => {
+            setTimeout(() => {
               if (get().errorToast === errText) set({ errorToast: null });
-          }, 5000);
+            }, 5000);
           }
           const doneSid = get().currentSessionId;
           set((s) => {
@@ -793,7 +792,10 @@ export const useStore = create<StoreState>((set, get) => {
           // verbatim; commit on agent_end (no 'complete' arrives externally).
           const sid = msg.sessionId;
           const ev = msg.event;
-          console.log('[ext] evt', ev?.type, (sid || '').slice(0, 8), 'cur=', (get().currentSessionId || '').slice(0, 8));
+          // Boundary-only ingress log (per-delta here is ~15 lines/s of spam).
+          if (ev && (ev.type === 'agent_start' || ev.type === 'agent_end' || ev.type === 'message_start' || ev.type === 'message_end')) {
+            console.log('[ext] evt', ev.type, (sid || '').slice(0, 8), 'cur=', (get().currentSessionId || '').slice(0, 8));
+          }
           // Pips update for ALL sessions (drawer) before the open-session filter.
           if (sid && ev) {
             if (ev.type === 'agent_start') {
@@ -1070,10 +1072,17 @@ async function bootstrapConnect(attempt: number): Promise<void> {
     if (data && typeof data === 'object' && 'lanUrl' in data && typeof data.lanUrl === 'string') {
       lanUrl = data.lanUrl;
     }
+    let lanUrls: string[] = [];
+    if (data && typeof data === 'object' && 'lanUrls' in data && Array.isArray(data.lanUrls)) {
+      lanUrls = data.lanUrls.filter((u): u is string => typeof u === 'string');
+    }
     // Prefer direct LAN when the phone shares the PC's WiFi: the Cloudflare
     // tunnel adds a full WAN round trip to every streaming frame. Probe with
     // a short timeout; any HTTP response (even 401/404) proves reachability.
-    const candidates = [lanUrl, url].filter(
+    // Probe every published LAN URL: interfaces come and go (WiFi drops, USB
+    // re-enumerates on a new subnet) and a stale single URL silently degrades
+    // to tunnel. lanUrl kept for older gist formats.
+    const candidates = [...lanUrls, lanUrl, url].filter(
       (u): u is string => !!u && u.startsWith('http'),
     );
     for (const base of candidates) {

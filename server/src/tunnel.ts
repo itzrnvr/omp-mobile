@@ -64,6 +64,23 @@ function lanBaseUrl(port: number): string | null {
     return null;
   }
 }
+/** Every non-internal IPv4 base URL — interfaces come and go (WiFi drops,
+ * USB re-enumerates with a new subnet), so publish all and let the app probe. */
+function lanBaseUrls(port: number): string[] {
+  try {
+    const out: string[] = [];
+    for (const list of Object.values(networkInterfaces())) {
+      for (const a of list || []) {
+        if (a && a.family === "IPv4" && !a.internal) {
+          out.push("http://" + a.address + ":" + String(port));
+        }
+      }
+    }
+    return [...new Set(out)];
+  } catch {
+    return [];
+  }
+}
 async function publishTunnelUrl(url: string, port: number): Promise<void> {
   try {
     const tokenProc = Bun.spawnSync(["gh", "auth", "token"]);
@@ -71,7 +88,14 @@ async function publishTunnelUrl(url: string, port: number): Promise<void> {
     if (!token) return;
     // LAN base URL: same-WiFi phones connect directly (no cloud round trip,
     // seconds of latency saved on every frame). App probes LAN first.
-    const content = JSON.stringify({ url, lanUrl: lanBaseUrl(port), updated: Date.now() });
+    // lanUrls (plural): interfaces change under us, so publish them all and
+    // let the client probe. lanUrl kept for older clients.
+    const content = JSON.stringify({
+      url,
+      lanUrl: lanBaseUrl(port),
+      lanUrls: lanBaseUrls(port),
+      updated: Date.now(),
+    });
     await fetch(`https://api.github.com/gists/${GIST_ID}`, {
       method: "PATCH",
       headers: {
