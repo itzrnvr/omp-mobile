@@ -793,6 +793,7 @@ export const useStore = create<StoreState>((set, get) => {
           // verbatim; commit on agent_end (no 'complete' arrives externally).
           const sid = msg.sessionId;
           const ev = msg.event;
+          console.log('[ext] evt', ev?.type, (sid || '').slice(0, 8), 'cur=', (get().currentSessionId || '').slice(0, 8));
           // Pips update for ALL sessions (drawer) before the open-session filter.
           if (sid && ev) {
             if (ev.type === 'agent_start') {
