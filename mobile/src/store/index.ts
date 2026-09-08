@@ -1094,10 +1094,15 @@ async function bootstrapConnect(attempt: number): Promise<void> {
         candidates.push(u);
       }
     }
-    const probeOne = async (base: string): Promise<string | null> => {
+    // The tunnel is the terminal fallback (matters on cellular away from
+    // the PC): give it a longer cap. A 1.5s timeout there can loop the
+    // 8s retry forever on a poor connection with nothing after it.
+    const probeOne = async (base: string, capMs = 1500): Promise<string | null> => {
       try {
-        const probe = fetch(base + '/api/sync-status', { cache: 'no-store' });
-        const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('lan-timeout')), 1500));
+        // Swallow late rejections: when the timeout wins, the underlying
+        // fetch still settles later (unhandled-rejection warnings otherwise).
+        const probe = fetch(base + '/api/sync-status', { cache: 'no-store' }).catch(() => null);
+        const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('probe-timeout')), capMs));
         const r = (await Promise.race([probe, timeout])) as { status?: number };
         if (r && typeof r.status === 'number' && r.status < 500) return base;
       } catch {
@@ -1105,10 +1110,13 @@ async function bootstrapConnect(attempt: number): Promise<void> {
       }
       return null;
     };
-    const settled = await Promise.all(candidates.map((c) => probeOne(c)));
-    for (let i = 0; i < candidates.length; i++) {
-      const base = candidates[i];
-      if (settled[i]) {
+    // All probes start together, but await in preference order: a fast first
+    // candidate connects immediately instead of waiting out the 1.5s
+    // timeouts of unreachable virtual adapters.
+    const promises = candidates.map((c) => probeOne(c, c === url ? 8000 : 1500));
+    for (let i = 0; i < promises.length; i++) {
+      const base = await promises[i];
+      if (base) {
         console.log('[bootstrap] base', base, base === url ? '(tunnel)' : '(lan)');
         useStore.setState({ serverUrl: base });
         useStore.getState().connect();
