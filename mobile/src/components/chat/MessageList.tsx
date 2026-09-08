@@ -221,9 +221,6 @@ export function MessageList({
 }: MessageListProps) {
   const listRef = useRef<FlatList>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  // True while the user is parked at the bottom; auto-scroll only then, so
-  // reading older content never fights the stream (2026-09-05 UX fix).
-  const nearBottomRef = useRef(true);
   const [liveOpen, setLiveOpen] = useState(true);
   // Selector subscriptions only: a whole-store subscription re-rendered the
   // whole list on every streaming delta (lag/glitch storm, 2026-09-05).
@@ -253,23 +250,37 @@ export function MessageList({
     if (newId) openChat(newId);
   };
 
-  // ONE scroll rule (2026-09-06 simplification): whenever the content
-  // grows and the user is parked at the bottom, pin. No timers, no intervals.
+  // Pin rule: follow the bottom unless the user took over by dragging.
+  // The pin releases ONLY on user drag (onScrollBeginDrag) and re-engages
+  // when the user scrolls back to the bottom (drag/momentum end) or taps
+  // the jump button. It must NOT gate on per-event distance the rest of the
+  // time: VirtualizedList estimate re-measures change contentSize without a
+  // scroll event and permanently disengage a distance-gated pin.
   // Pin with the REAL content height: scrollToOffset(MAX_SAFE_INTEGER) does
-  // NOT clamp on this RN/Android — it parked the viewport beyond all content
-  // and the virtualized list rendered nothing (blank-list root cause,
-  // proven by A/B on emulator 2026-09-06). Finite offsets always clamp.
+  // NOT clamp on this RN/Android (blank-list root cause, proven by A/B on
+  // emulator 2026-09-06). Finite offsets always clamp.
+  const userHoldRef = useRef(false);
   const contentHeightRef = useRef(0);
   const handleContentSize = (_w: number, h: number) => {
-    const prev = contentHeightRef.current;
     contentHeightRef.current = h;
-    // Pin while parked at bottom. ALSO re-pin whenever content SHRINKS:
-    // after a live turn commits, the streaming footer is replaced by shorter
-    // committed rows — the scroll offset can end up past the new content end
-    // (blank tail). A shrink re-pin always lands back on real content.
-    if (nearBottomRef.current || h < prev) {
+    // Pin on EVERY size change (growth and shrink) unless the user is
+    // holding the scroll. Shrink re-pin matters: after a live turn commits,
+    // the streaming footer is replaced by shorter committed rows and the
+    // offset can end up past the new content end (blank tail).
+    if (!userHoldRef.current) {
       listRef.current?.scrollToOffset({ offset: h, animated: false });
     }
+  };
+
+  const distFromBottom = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      layoutMeasurement: { height: number };
+      contentSize: { height: number };
+    };
+  }) => {
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    return contentSize.height - (contentOffset.y + layoutMeasurement.height);
   };
 
   const handleScroll = (event: {
@@ -279,10 +290,25 @@ export function MessageList({
       contentSize: { height: number };
     };
   }) => {
-    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
-    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    nearBottomRef.current = distanceFromBottom < 120;
-    setShowScrollButton(distanceFromBottom > 200);
+    // Scroll-button visibility only — never touches the pin (estimate races).
+    setShowScrollButton(distFromBottom(event) > 200);
+  };
+
+  const handleBeginDrag = () => {
+    userHoldRef.current = true;
+  };
+
+  const handleEndDrag = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      layoutMeasurement: { height: number };
+      contentSize: { height: number };
+    };
+  }) => {
+    // User released: re-engage the pin iff parked at the bottom.
+    const near = distFromBottom(event) < 120;
+    userHoldRef.current = !near;
+    setShowScrollButton(!near && distFromBottom(event) > 200);
   };
 
   const items = useMemo(() => groupTurns(messages), [messages]);
@@ -299,8 +325,9 @@ export function MessageList({
     prevCount.current = items.length;
     if (delta <= 1) return;
     const pin = () => {
-      nearBottomRef.current = true;
-      listRef.current?.scrollToOffset({ offset: contentHeightRef.current, animated: false });
+      if (!userHoldRef.current) {
+        listRef.current?.scrollToOffset({ offset: contentHeightRef.current, animated: false });
+      }
     };
     const t1 = setTimeout(pin, 60);
     const t2 = setTimeout(() => {
@@ -324,6 +351,9 @@ export function MessageList({
         data={items}
         keyExtractor={(item, i) => (item.kind === "user" ? "u" + i : "t" + i)}
         onScroll={handleScroll}
+        onScrollBeginDrag={handleBeginDrag}
+        onScrollEndDrag={handleEndDrag}
+        onMomentumScrollEnd={handleEndDrag}
         onContentSizeChange={handleContentSize}
         scrollEventThrottle={16}
         contentContainerStyle={[styles.list, { paddingBottom: spacing.md + 132 + (kbHeight || 0) }]}
@@ -385,7 +415,7 @@ export function MessageList({
         <Pressable
           style={styles.scrollButton}
           onPress={() => {
-            nearBottomRef.current = true;
+            userHoldRef.current = false;
             listRef.current?.scrollToOffset({ offset: contentHeightRef.current, animated: false });
           }}
         >

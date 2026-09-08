@@ -79,6 +79,11 @@ export function Trace({
     return () => clearInterval(id);
   }, [isStreaming]);
 
+  // Fresh turn restarts the clock (stale secs read 476s on a new turn).
+  useEffect(() => {
+    if (isStreaming) setSecs(0);
+  }, [isStreaming]);
+
   // Completed turns: never show running indicators.
   const effSteps = isStreaming ? steps : steps.map((s) => (s.kind === "tool" ? { ...s, status: "done" as const } : s));
 
