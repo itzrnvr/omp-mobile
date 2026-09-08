@@ -407,6 +407,9 @@ function handleExtMessage(ws: WebSocket, raw: string): void {
     conn.proto = typeof m.proto === "number" ? m.proto : 1;
     console.log("[ext] hello proto=" + conn.proto + " session=" + (conn.sessionId || "none").slice(0, 8));
     if (conn.sessionId) extLastEvent.set(conn.sessionId, Date.now());
+    // Learn running from the hello itself: after a bridge restart the map
+    // is empty and no agent_start may fire for a while (mid-turn reconnect).
+    if (conn.sessionId && typeof m.running === 'boolean') extRunning.set(conn.sessionId, m.running);
     // running lets a reconnecting app recover the Stop button for a turn
     // whose agent_start fired before it opened/connected (ext also reports
     // its live tuiRunning in the hello).
