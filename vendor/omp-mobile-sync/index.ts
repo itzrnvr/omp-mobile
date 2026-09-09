@@ -92,7 +92,23 @@ function connect(): void {
           // vanished). Errors are logged, never swallowed silently.
           if (mode === "idle") {
             pendingSteers.push(m.content);
-            log("ext_steer: idle -> queued for boundary hook");
+            log("ext_steer: idle -> queued, trying immediate submit (starts a turn if the runtime allows)");
+            // Idle deadlock fix: an idle TUI never fires agent_end, so a
+            // boundary-only queue waits forever. Try a plain submit — if the
+            // runtime turns it into a turn, the user-echo drop below removes
+            // the queued copy so the boundary hook can't duplicate it.
+            // If it no-ops, the queue remains (previous behavior preserved).
+            try {
+              const fn = (api as unknown as Record<string, unknown> | null)?.sendUserMessage;
+              if (typeof fn === "function") {
+                (api as ExtensionAPI).sendUserMessage(m.content);
+                log("ext_steer: idle immediate attempted (no-throw)");
+              } else {
+                log("ext_steer: pi.sendUserMessage MISSING on runtime pi");
+              }
+            } catch (e) {
+              log("ext_steer: idle immediate THREW " + String(e));
+            }
             return;
           }
           pendingSteers.push(m.content);
@@ -301,9 +317,28 @@ export default function (pi: ExtensionAPI): void {
     pi.on("turn_start", (_e, ctx) => fwd(ctx, { type: "turn_start" }));
     pi.on("turn_end", (_e, ctx) => fwd(ctx, { type: "turn_end" }));
 
-    pi.on("message_start", (e, ctx) =>
-      fwd(ctx, { type: "message_start", message: e.message }),
-    );
+    pi.on("message_start", (e, ctx) => {
+      // User-echo dedupe: if a user message matching a queued steer enters
+      // the session (idle immediate-submit landed, or mid-steer echoed),
+      // drop the queued copy so the agent_end hook can't inject it twice.
+      try {
+        const m = e.message as { role?: string; content?: { type?: string; text?: string }[] } | undefined;
+        if (m && m.role === "user" && Array.isArray(m.content) && pendingSteers.length > 0) {
+          const txt = m.content
+            .map((c) => (c && c.type === "text" && typeof c.text === "string" ? c.text : ""))
+            .join("\n")
+            .trim();
+          const idx = pendingSteers.findIndex((q) => q.trim() === txt && txt.length > 0);
+          if (idx >= 0) {
+            pendingSteers.splice(idx, 1);
+            log("message_start: user echo matched queued steer, dropped copy");
+          }
+        }
+      } catch {
+        /* never break the TUI */
+      }
+      fwd(ctx, { type: "message_start", message: e.message });
+    });
     pi.on("message_end", (e, ctx) => {
       lastCtx = ctx as { abort?: () => void; isIdle?: () => boolean };
       fwd(ctx, { type: "message_end", message: e.message });
