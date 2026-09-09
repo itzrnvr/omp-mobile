@@ -24,6 +24,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  ActivityIndicator,
 
   Text as RNText,
   Dimensions,
@@ -187,7 +188,10 @@ function DrawerBase({ visible, onClose, onOpenSession, onNewChat, onOpenSettings
         onLongPress={() => setActionSession(s)}
       >
         <View style={styles.itemTitleRow}>
-          {active ? (
+          {/* Running = spinner; owned-but-idle = dim pulsing dot. */}
+          {running ? (
+            <ActivityIndicator size="small" color="#9ccafa" style={styles.liveSpinner} />
+          ) : active ? (
             <Animated.View style={[styles.liveDot, { opacity: pulse }]} />
           ) : null}
           <RNText style={styles.itemTitle} numberOfLines={1}>
@@ -381,6 +385,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.link,
   },
+  liveSpinner: { marginLeft: -7, marginRight: -6 },
   itemTitle: { flex: 1, fontSize: 14, fontWeight: "500", color: colors.text },
   itemPreview: { fontSize: 12, color: "#8a8a8a", marginTop: 2 },
   footerRow: {

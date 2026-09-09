@@ -145,6 +145,13 @@ function ChatInputBase({
           placeholder={placeholder}
           placeholderTextColor="#606060"
           multiline
+          // While the agent is active the button is Stop, so Enter sends
+          // (mid-turn steer); idle Enter stays a newline.
+          submitBehavior={isGenerating ? "submit" : "newline"}
+          returnKeyType={isGenerating ? "send" : "default"}
+          onSubmitEditing={() => {
+            if (isGenerating && value.trim()) onSend();
+          }}
           textAlignVertical="top"
           selectionColor={colors.accent}
         />
@@ -152,15 +159,6 @@ function ChatInputBase({
           <Pressable onPress={() => setPanel(panel === "plus" ? null : "plus")} accessibilityLabel="Add">
             <Icon name="add" size={24} color="#a3a3a3" />
           </Pressable>
-          {isGenerating && (
-            <Pressable
-              style={styles.stopInline}
-              onPress={onCancel}
-              accessibilityLabel="Stop"
-            >
-              <Icon name="stop" size={13} color="#ff8a8a" />
-            </Pressable>
-          )}
           <Pressable
             onPress={() => setPanel(panel === "ctx" ? null : "ctx")}
             accessibilityLabel="Context usage"
@@ -184,7 +182,8 @@ function ChatInputBase({
           >
             <Icon name="mic" size={22} color="#a3a3a3" />
           </Pressable>
-          {isGenerating && !value.trim() ? (
+          {/* Square = agent active (responding/streaming/waiting). Tapping it stops. */}
+          {isGenerating ? (
             <Pressable
               style={[styles.send, styles.sendStop]}
               onPress={onCancel}
@@ -228,7 +227,7 @@ function ChatInputBase({
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: 14, backgroundColor: colors.bg },
+  container: { paddingHorizontal: 14, paddingTop: 6, backgroundColor: colors.bg },
   card: {
     backgroundColor: "#2d2d2d",
     borderRadius: 28,
@@ -289,7 +288,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendReady: { backgroundColor: "#f2f2f2" },
-  stopInline: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#2d2d2d", alignItems: "center", justifyContent: "center" },
   queueWrap: { paddingBottom: spacing.xs, gap: 4 },
   queueChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#242424", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start" },
   queueText: { fontSize: 12, color: "#9ccafa", maxWidth: 220 },

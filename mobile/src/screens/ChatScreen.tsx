@@ -64,7 +64,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
     pendingSteers,
     removePendingSteer,
     steerModes,
-    externalActive,
     externalLive,
     currentSessionId,
     errorToast,
@@ -91,7 +90,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
       pendingSteers: s.pendingSteers,
       removePendingSteer: s.removePendingSteer,
       steerModes: s.steerModes,
-      externalActive: s.externalActive,
       externalLive: s.externalLive,
       currentSessionId: s.currentSessionId,
       errorToast: s.errorToast,
@@ -232,14 +230,6 @@ export function ChatScreen({ route }: { route: { params?: { sessionId?: string }
           <Icon name="cloud-offline" size={13} color="#9b9b9b" />
           <Text size="xs" color="textMuted">
             Polling sync - run /reload-plugins in the desktop TUI for live streaming
-          </Text>
-        </View>
-      ) : null}
-      {externalActive || externalLive[currentSessionId ?? ''] ? (
-        <View style={styles.syncBanner}>
-          <Icon name="activity" size={13} color="#9ccafa" />
-          <Text size="xs" color="textSecondary">
-            Live in omp TUI — streaming in real time
           </Text>
         </View>
       ) : null}
